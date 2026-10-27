@@ -105,3 +105,21 @@ ambiguous dates. Featured/regular duplicates are consolidated. Only the first
 visible event listing is covered (Load more and historical crawling are future
 work). See [Gate 3 details](docs/CRYPTOEVENTS_PILOT.md). The Coindar candidate
 remains on the roadmap for local/browser-based trials.
+
+
+## Gate 4: one normalized event contract
+
+Both providers now support a versioned, provider-independent output format
+without changing their native exports:
+
+```bash
+crypto-harvester scrape --provider icodrops --section ended --schema unified \
+  --output tokens.json
+crypto-harvester scrape --provider cryptoevents --schema unified \
+  --output conferences.json
+```
+
+See [Unified schema v1](docs/UNIFIED_SCHEMA.md). Date-only or unknown event
+dates **never** become inferred UTC timestamps; the two providers currently
+have no verified event timezone. Coindar is still a planned candidate for
+local/browser trials.

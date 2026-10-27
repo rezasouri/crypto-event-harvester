@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     scrape.add_argument("--engine", choices=("http", "playwright", "selenium"), default="http")
     scrape.add_argument("--timeout", type=float, default=20)
     scrape.add_argument("--format", choices=("json", "csv"), default="json")
+    scrape.add_argument("--schema", choices=("native", "unified"), default="native")
     scrape.add_argument("--output", type=Path, help="Save output; otherwise print to stdout")
     scrape.add_argument("--input-html", type=Path, help="Parse saved HTML offline (one section only)")
     scrape.add_argument("--limit", type=int, default=None, help="Limit exported rows; not fetch count")
@@ -48,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _scrape(args) -> int:
+    from .normalization import SCHEMA_VERSION, UnifiedEvent, normalize_events
     from .providers import cryptoevents, icodrops
 
     if args.input_html and args.section == "all":
@@ -85,7 +87,12 @@ def _scrape(args) -> int:
         all_events = list(unique.values())
         if len(all_events) < args.min_events:
             raise RuntimeError(f"Expected at least {args.min_events} events, got {len(all_events)}")
-        selected = all_events[:args.limit] if args.limit is not None else all_events
+        if args.schema == "unified":
+            records = normalize_events(all_events)
+            event_type = UnifiedEvent
+        else:
+            records = all_events
+        selected = records[:args.limit] if args.limit is not None else records
         if args.format == "json":
             payload = {
                 "provider": args.provider,
@@ -94,6 +101,9 @@ def _scrape(args) -> int:
                 "exported_count": len(selected),
                 "events": [event.to_dict() for event in selected],
             }
+            if args.schema == "unified":
+                payload["schema"] = "unified"
+                payload["schema_version"] = SCHEMA_VERSION
             output = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         else:
             buffer = io.StringIO()
