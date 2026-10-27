@@ -1,0 +1,62 @@
+name: Unified provider export (nonblocking)
+
+on:
+  pull_request:
+    paths:
+      - 'src/crypto_event_harvester/normalization.py'
+      - 'src/crypto_event_harvester/cli.py'
+      - '.github/workflows/live-unified-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unified-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Scrape once per source into versioned normalized schema
+        run: |
+          crypto-harvester scrape --provider icodrops --section upcoming \
+            --schema unified --min-events 20 --output artifacts/icodrops-unified.json
+          crypto-harvester scrape --provider cryptoevents \
+            --schema unified --min-events 10 --output artifacts/cryptoevents-unified.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          reports = {}
+          for path in sorted(Path("artifacts").glob("*-unified.json")):
+              doc = json.loads(path.read_text(encoding="utf-8"))
+              assert doc["schema"] == "unified" and doc["schema_version"] == "1.0"
+              rows = doc["events"]
+              assert rows and len(rows) == doc["extracted_count"]
+              assert len({row["event_id"] for row in rows}) == len(rows)
+              for row in rows:
+                  assert row["start_at_utc"] is None
+                  assert row["end_at_utc"] is None
+                  assert row["timezone"] is None
+                  assert row["event_id"].startswith(f'{row["provider"]}:')
+                  if row["date_precision"] in {"unknown", "quarter"}:
+                      assert row["start_date"] is None and row["end_date"] is None
+                  else:
+                      assert row["start_date"] is not None and row["end_date"] is not None
+              reports[doc["provider"]] = rows
+              print(doc["provider"], "normalized records:", len(rows))
+              print("sample:", json.dumps(rows[:1], ensure_ascii=False))
+          assert set(reports) == {"icodrops", "cryptoevents"}
+          assert set(reports["icodrops"][0]) == set(reports["cryptoevents"][0])
+          PY
+      - name: Upload validated unified records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-live-provider-records
+          path: artifacts/*-unified.json
+          if-no-files-found: warn
