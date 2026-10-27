@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import sys
 from pathlib import Path
@@ -32,11 +34,77 @@ def build_parser() -> argparse.ArgumentParser:
     sources.add_argument(
         "--strict", action="store_true", help="Return nonzero if listing evidence is absent"
     )
+    scrape = subcommands.add_parser("scrape", help="Extract real crypto event listing rows")
+    scrape.add_argument("--provider", choices=("icodrops",), default="icodrops")
+    scrape.add_argument("--section", choices=("upcoming", "active", "ended", "all"), default="upcoming")
+    scrape.add_argument("--engine", choices=("http", "playwright", "selenium"), default="http")
+    scrape.add_argument("--timeout", type=float, default=20)
+    scrape.add_argument("--format", choices=("json", "csv"), default="json")
+    scrape.add_argument("--output", type=Path, help="Save output; otherwise print to stdout")
+    scrape.add_argument("--input-html", type=Path, help="Parse saved HTML offline (one section only)")
+    scrape.add_argument("--limit", type=int, default=None, help="Limit exported rows; not fetch count")
+    scrape.add_argument("--min-events", type=int, default=0, help="Fail if fewer events were extracted")
     return parser
+
+
+def _scrape(args) -> int:
+    from .providers.icodrops import ICODropsError, ICODropsEvent, fetch_listing, parse_listing
+
+    if args.input_html and args.section == "all":
+        print("--input-html requires a single section", file=sys.stderr)
+        return 2
+    if args.limit is not None and args.limit <= 0:
+        print("--limit must be positive", file=sys.stderr)
+        return 2
+    if args.min_events < 0:
+        print("--min-events cannot be negative", file=sys.stderr)
+        return 2
+    sections = ("upcoming", "active", "ended") if args.section == "all" else (args.section,)
+    try:
+        unique = {}
+        for section in sections:
+            events = (
+                parse_listing(args.input_html.read_text(encoding="utf-8"), section=section)
+                if args.input_html
+                else fetch_listing(section, engine=args.engine, timeout_seconds=args.timeout)
+            )
+            for event in events:
+                unique[event.event_id] = event
+        all_events = list(unique.values())
+        if len(all_events) < args.min_events:
+            raise ICODropsError(f"Expected at least {args.min_events} events, got {len(all_events)}")
+        selected = all_events[:args.limit] if args.limit is not None else all_events
+        if args.format == "json":
+            payload = {
+                "provider": args.provider,
+                "sections": list(sections),
+                "extracted_count": len(all_events),
+                "exported_count": len(selected),
+                "events": [event.to_dict() for event in selected],
+            }
+            output = json.dumps(payload, ensure_ascii=False, indent=2) + "\\n"
+        else:
+            buffer = io.StringIO()
+            writer = csv.DictWriter(buffer, fieldnames=list(ICODropsEvent.__dataclass_fields__))
+            writer.writeheader()
+            writer.writerows(event.to_dict() for event in selected)
+            output = buffer.getvalue()
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(output, encoding="utf-8")
+            print(json.dumps({"output": str(args.output), "events": len(selected)}, ensure_ascii=False))
+        else:
+            print(output, end="")
+        return 0
+    except (ICODropsError, OSError, RuntimeError, ValueError, httpx.HTTPError) as exc:
+        print(f"scrape failed: {exc}", file=sys.stderr)
+        return 2
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "scrape":
+        return _scrape(args)
     if args.command == "sources":
         from .source_feasibility import SOURCES, probe_sources
 
