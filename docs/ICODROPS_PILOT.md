@@ -52,3 +52,31 @@ identifier. The program fails if selectors break or no valid records remain.
 Coindar remains on the shortlist: HTTP 403 on a GitHub runner is not proof the
 site cannot be scraped from a regular workstation. Its HTTP/browser viability
 must be tested in that environment in a subsequent PR.
+
+
+## GitHub Actions live extraction evidence (2026-10-27)
+
+Run: https://github.com/rezasouri/crypto-event-harvester/actions/runs/40480385580
+
+- Source pages fetched by HTTPX: 2 (Upcoming and Ended; redirects, if any, may add wire requests).
+- **Upcoming:** 50 parsed rows, output `artifacts/icodrops-upcoming.json`.
+- **Ended:** 50 parsed rows, output `artifacts/icodrops-ended.json`.
+- **Total:** 100 listing records, without purchasing an API subscription.
+- Both generated JSON documents parsed successfully with Python `json.loads`.
+- Output saved as the `icodrops-real-extracted-events` workflow artifact.
+- CI on the same commit: lint passed and **47 offline tests passed**:
+  https://github.com/rezasouri/crypto-event-harvester/actions/runs/40480385619
+
+### Verified example records
+
+The Ended section includes the round `Jumper — ICM on Legion`, URL
+`https://icodrops.com/jumper/`, displayed date `Sep 29, 2026`, normalized
+`event_date=2026-09-29`, ticker `JUMP` and category `DEX`.
+
+The Upcoming section includes `CLIX — TGE and Distribution` with raw
+`date_text=Upcoming` and `event_date=null`; the parser correctly
+does not synthesize a release date.
+
+These results verify extraction of the current listing-page snapshot only.
+The provider does not yet crawl project detail pages or prove complete
+historic coverage.
