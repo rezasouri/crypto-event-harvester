@@ -4,8 +4,8 @@ import pytest
 
 from crypto_event_harvester.probe import PageSnapshot
 from crypto_event_harvester.providers.icodrops import (
-    ICODropsError,
     LISTINGS,
+    ICODropsError,
     _date_value,
     fetch_listing,
     parse_listing,
@@ -63,7 +63,7 @@ def test_do_not_fabricate_dates(raw, date, precision, role):
 
 def test_deduplicates_same_round():
     html = (FIXTURES / "icodrops_ended.html").read_text()
-    doubled = html.replace("</ul>", html.split("<li", 1)[1].split("</li>")[0].join([]) + "</ul>")
+    # Repeated row should not create an additional event.
     # Insert a second row with identical project/round before the list closes.
     start = html.index("<li")
     end = html.index("</li>") + len("</li>")

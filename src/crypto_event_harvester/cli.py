@@ -82,7 +82,7 @@ def _scrape(args) -> int:
                 "exported_count": len(selected),
                 "events": [event.to_dict() for event in selected],
             }
-            output = json.dumps(payload, ensure_ascii=False, indent=2) + "\\n"
+            output = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         else:
             buffer = io.StringIO()
             writer = csv.DictWriter(buffer, fieldnames=list(ICODropsEvent.__dataclass_fields__))

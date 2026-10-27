@@ -75,3 +75,16 @@ This command examines **one listing page per source**, detects candidate detail 
 reports access failures without treating candidates as confirmed extracted events.
 See [source-feasibility methodology](docs/SOURCE_FEASIBILITY.md). A separate nonblocking
 GitHub Actions workflow attaches live HTTP evidence to the PR.
+
+
+## Gate 2: real ICO Drops listings
+
+```bash
+crypto-harvester scrape --provider icodrops --section upcoming --output upcoming.json
+crypto-harvester scrape --provider icodrops --section ended --format csv --output ended.csv
+```
+
+The provider reads real ICO Drops HTML rows (not candidate navigation links).
+Upcoming events without explicit dates remain undated. See
+[the ICO Drops pilot details](docs/ICODROPS_PILOT.md). Coindar remains
+a planned provider despite blocking GitHub Actions IPs.
