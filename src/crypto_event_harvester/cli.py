@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict", action="store_true", help="Return nonzero if listing evidence is absent"
     )
     scrape = subcommands.add_parser("scrape", help="Extract real crypto event listing rows")
-    scrape.add_argument("--provider", choices=("icodrops",), default="icodrops")
+    scrape.add_argument("--provider", choices=("icodrops", "cryptoevents"), default="icodrops")
     scrape.add_argument("--section", choices=("upcoming", "active", "ended", "all"), default="upcoming")
     scrape.add_argument("--engine", choices=("http", "playwright", "selenium"), default="http")
     scrape.add_argument("--timeout", type=float, default=20)
@@ -48,10 +48,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _scrape(args) -> int:
-    from .providers.icodrops import ICODropsError, ICODropsEvent, fetch_listing, parse_listing
+    from .providers.cryptoevents import (
+        CryptoEventsEvent,
+        fetch_listing as fetch_cryptoevents,
+        parse_listing as parse_cryptoevents,
+    )
+    from .providers.icodrops import (
+        ICODropsEvent,
+        fetch_listing as fetch_icodrops,
+        parse_listing as parse_icodrops,
+    )
 
     if args.input_html and args.section == "all":
         print("--input-html requires a single section", file=sys.stderr)
+        return 2
+    if args.provider == "cryptoevents" and args.section != "upcoming":
+        print("cryptoevents currently supports only --section upcoming", file=sys.stderr)
         return 2
     if args.limit is not None and args.limit <= 0:
         print("--limit must be positive", file=sys.stderr)
@@ -59,20 +71,29 @@ def _scrape(args) -> int:
     if args.min_events < 0:
         print("--min-events cannot be negative", file=sys.stderr)
         return 2
+
     sections = ("upcoming", "active", "ended") if args.section == "all" else (args.section,)
+    event_type = CryptoEventsEvent if args.provider == "cryptoevents" else ICODropsEvent
     try:
         unique = {}
         for section in sections:
-            events = (
-                parse_listing(args.input_html.read_text(encoding="utf-8"), section=section)
-                if args.input_html
-                else fetch_listing(section, engine=args.engine, timeout_seconds=args.timeout)
-            )
+            if args.provider == "cryptoevents":
+                events = (
+                    parse_cryptoevents(args.input_html.read_text(encoding="utf-8"))
+                    if args.input_html
+                    else fetch_cryptoevents(engine=args.engine, timeout_seconds=args.timeout)
+                )
+            else:
+                events = (
+                    parse_icodrops(args.input_html.read_text(encoding="utf-8"), section=section)
+                    if args.input_html
+                    else fetch_icodrops(section, engine=args.engine, timeout_seconds=args.timeout)
+                )
             for event in events:
                 unique[event.event_id] = event
         all_events = list(unique.values())
         if len(all_events) < args.min_events:
-            raise ICODropsError(f"Expected at least {args.min_events} events, got {len(all_events)}")
+            raise RuntimeError(f"Expected at least {args.min_events} events, got {len(all_events)}")
         selected = all_events[:args.limit] if args.limit is not None else all_events
         if args.format == "json":
             payload = {
@@ -85,7 +106,7 @@ def _scrape(args) -> int:
             output = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         else:
             buffer = io.StringIO()
-            writer = csv.DictWriter(buffer, fieldnames=list(ICODropsEvent.__dataclass_fields__))
+            writer = csv.DictWriter(buffer, fieldnames=list(event_type.__dataclass_fields__))
             writer.writeheader()
             writer.writerows(event.to_dict() for event in selected)
             output = buffer.getvalue()
@@ -96,7 +117,7 @@ def _scrape(args) -> int:
         else:
             print(output, end="")
         return 0
-    except (ICODropsError, OSError, RuntimeError, ValueError, httpx.HTTPError) as exc:
+    except (OSError, RuntimeError, ValueError, httpx.HTTPError) as exc:
         print(f"scrape failed: {exc}", file=sys.stderr)
         return 2
 
