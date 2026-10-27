@@ -29,7 +29,9 @@ def build_parser() -> argparse.ArgumentParser:
     sources.add_argument("--timeout", type=float, default=20)
     sources.add_argument("--json-out", type=Path, help="Save machine-readable source diagnostics")
     sources.add_argument("--save-html-dir", type=Path, help="Save raw HTML locally, never to Git")
-    sources.add_argument("--strict", action="store_true", help="Return nonzero if source listing evidence is absent")
+    sources.add_argument(
+        "--strict", action="store_true", help="Return nonzero if listing evidence is absent"
+    )
     return parser
 
 
@@ -47,7 +49,8 @@ def main(argv: list[str] | None = None) -> int:
             args.json_out.parent.mkdir(parents=True, exist_ok=True)
             args.json_out.write_text(output + "\n", encoding="utf-8")
         print(output)
-        return 1 if args.strict and any(item["status"] != "listing_evidence" for item in report["sources"]) else 0
+        has_missing = any(item["status"] != "listing_evidence" for item in report["sources"])
+        return 1 if args.strict and has_missing else 0
     try:
         snapshot = fetch_page(
             args.url, engine=args.engine, timeout_seconds=args.timeout, wait_for=args.wait_for

@@ -56,3 +56,20 @@ subscriptions or event detail fetches are involved. Run outcomes may differ acro
 After live results are reviewed, the next pull request implements *one* real event parser at a
 time using captured fixture HTML, verifies at least 20 real events when available, confirms
 field correctness against the source pages, and documents pagination/history separately.
+
+
+## First observed live GitHub Actions run
+
+Run: https://github.com/rezasouri/crypto-event-harvester/actions/runs/40477402010
+(2026-10-27 UTC, one HTTP listing probe per source; revision before navigation-link exclusions.)
+
+| Source | Status | HTTP | Candidate links | HTML bytes |
+| --- | --- | ---: | ---: | ---: |
+| Coindar | blocked | 403 (challenge page) | 0 | 5507 |
+| ICO Drops | listing_evidence | 200 | 52 | 230090 |
+| CryptoEvents.global | listing_evidence | 200 | 37 | 91146 |
+
+**Caution:** the initial candidate counts included navigation links (e.g., Points Farming
+and regional category pages). Subsequent exclusions reduce false positives; a fresh CI run
+on the updated commit is the source of truth for updated candidate-link counts. No normalized
+events were extracted. Browser rendering for Coindar is not attempted against an access block.

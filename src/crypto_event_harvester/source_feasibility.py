@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from urllib.parse import urljoin, urlsplit
@@ -43,6 +43,7 @@ SOURCES: dict[str, SourceSpec] = {
         excluded_slugs=frozenset({
             "about", "advertising", "legal", "contact", "privacy-policy",
             "terms", "category", "investors", "ico-stats", "funding-rounds",
+            "points-farming",
         }),
     ),
     "cryptoevents": SourceSpec(
@@ -54,6 +55,11 @@ SOURCES: dict[str, SourceSpec] = {
         excluded_slugs=frozenset({
             "about", "contact", "conferences", "privacy-policy", "web3-events",
             "newsroom", "blog", "submit-event", "announcements", "orange-pilled",
+            "bitcoin-blockchain-conferences-in-north-america",
+            "bitcoin-blockchain-conferences-in-europe",
+            "bitcoin-blockchain-conferences-asia-apac-africa",
+            "orange-pilled-bitcoin-events",
+            "meetups-workshops-networking-crypto-web3-events",
         }),
     ),
 }
@@ -83,7 +89,8 @@ def candidate_event_links(html: str, *, spec: SourceSpec, max_samples: int = 5) 
         canonical = f"{parts.scheme}://{parts.netloc}{parts.path}"
         if canonical not in found:
             found[canonical] = label[:120]
-    return len(found), [{"url": url, "anchor_text": label} for url, label in list(found.items())[:max_samples]]
+    samples = [{"url": url, "anchor_text": label} for url, label in list(found.items())[:max_samples]]
+    return len(found), samples
 
 
 def inspect_snapshot(spec: SourceSpec, snapshot: PageSnapshot) -> dict:
@@ -162,7 +169,7 @@ def probe_source(
         }
     report["fetch_attempts"] = attempts
     report["duration_seconds"] = round(perf_counter() - started, 3)
-    report["observed_at_utc"] = datetime.now(timezone.utc).isoformat()
+    report["observed_at_utc"] = datetime.now(UTC).isoformat()
     return report
 
 
@@ -172,7 +179,9 @@ def probe_sources(
 ) -> dict:
     """Produce a JSON-serializable report of source status and request budget."""
     results = [
-        probe_source(SOURCES[name], engine=engine, timeout_seconds=timeout_seconds, save_html_dir=save_html_dir)
+        probe_source(
+            SOURCES[name], engine=engine, timeout_seconds=timeout_seconds, save_html_dir=save_html_dir
+        )
         for name in names
     ]
     return {
