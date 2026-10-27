@@ -1,0 +1,38 @@
+# Scraping Feasibility Pilot — implementation gates
+
+This repository is a **zero-paid-API technical pilot**, not a trading signal system.
+The first release targets crypto *events* (not price candles). Browser automation is an
+optional fetch strategy; each site's provider stays independent.
+
+## Delivery rule
+
+Every stage is proposed in an isolated branch and pull request. Do **not** merge until
+reviewed by the repository owner. Advance to the next stage only after approval/merge.
+
+| Gate | Scope | Acceptance evidence |
+| --- | --- | --- |
+| 0 — Foundation | Python package, optional browser engines, reproducible offline CI, one-page probe | Tests and lint pass, CLI probes an accessible page |
+| 1 — Source feasibility | Probe Coindar, ICO Drops, CryptoEvents.global; inspect HTML, DOM, pagination, history | `SOURCE_FEASIBILITY.md` with reproducible URLs, methods, observed limitations, request counts |
+| 2 — Provider pilots | Separate event parsers for sources that pass Gate 1 | Fixtures and successful extraction of available events, with source URLs |
+| 3 — Normalization | Common schema, UTC/tz/unknown date precision, source IDs | Validation tests, no fabricated timestamps |
+| 4 — Incremental storage | Dedup, revisions, resume, SQLite + CSV/JSON exports | Idempotence tests and before/after snapshots |
+| 5 — Evaluation | Repeated trials, parser regression fixtures, quality checks | `PILOT_RESULTS.md` and source comparison |
+
+## Pilot source shortlist
+
+- https://www.coindar.org/en — broad crypto event calendar
+- https://icodrops.com/ — token sale/launch events
+- https://cryptoevents.global/ — blockchain conferences/events
+
+These are **candidates**, not yet confirmed working or permitted for collection.
+Gate 1 will record whether each can be accessed via direct HTTP and whether JS rendering
+is required. Never claim an event was successfully scraped until verified from live content.
+
+## Engineering boundaries
+
+- No paid APIs or mandatory API keys.
+- Prefer one page for multiple events over per-event navigation.
+- Use HTTP first, Playwright when DOM rendering requires JS, Selenium if there is a concrete need.
+- Keep debug snapshots local; do not commit fetched content or session credentials.
+- Record 403/429/challenge pages as failures; do not add bypass or evasion machinery.
+- Gate 0 intentionally does **not** implement any site-specific scraper or persistent database.
