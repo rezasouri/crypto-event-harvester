@@ -115,6 +115,12 @@ def parse_listing(html: str) -> list[CryptoEventsEvent]:
             continue
         start, end, precision = parse_event_dates(date_text)
         slug = urlsplit(url).path.strip("/")
+        description_node = card.select_one(".event_short_description")
+        if description_node is not None:
+            # Do not include CTA text in the event synopsis.
+            for link in description_node.select("a"):
+                if "show more" in _text(link).lower():
+                    link.decompose()
         event = CryptoEventsEvent(
             event_id=f"cryptoevents:{slug}",
             source="cryptoevents",
@@ -123,7 +129,7 @@ def parse_listing(html: str) -> list[CryptoEventsEvent]:
             title=title,
             category="conference",
             location=_text(card.select_one(".event_location")) or None,
-            description=_text(card.select_one(".event_short_description")) or None,
+            description=_text(description_node) or None,
             date_text=date_text,
             start_date=start,
             end_date=end,

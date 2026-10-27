@@ -45,3 +45,18 @@ planned: a 403 response from GitHub-hosted IPs is not grounds to discard it.
 
 This pilot treats site unavailability, 403/429, or zero parseable cards as
 explicit failures rather than successes. No paid API or mandatory key.
+
+
+## Live validation evidence, 2026-10-27
+
+- GitHub workflow: https://github.com/rezasouri/crypto-event-harvester/actions/runs/40482222544
+- Source listing returned **21 unique conference records** with one HTTP listing request.
+- All 21 records had an explicit recognized calendar start day. Event times/time zones
+  remain intentionally unspecified.
+- Two sample events: LABITCONF 2026 Buenos Aires (Oct 30-31, 2026);
+  Devcon 2026 Mumbai (Nov 3-6, 2026).
+- JSON file successfully decoded; source URLs and unique event IDs validated.
+- This check is not proof of full site history or all events after "Load more".
+
+The first live run identified a lint import-order issue; the corrected revision
+must pass both offline tests and live workflows before review.

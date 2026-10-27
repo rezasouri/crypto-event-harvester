@@ -48,16 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _scrape(args) -> int:
-    from .providers.cryptoevents import (
-        CryptoEventsEvent,
-        fetch_listing as fetch_cryptoevents,
-        parse_listing as parse_cryptoevents,
-    )
-    from .providers.icodrops import (
-        ICODropsEvent,
-        fetch_listing as fetch_icodrops,
-        parse_listing as parse_icodrops,
-    )
+    from .providers import cryptoevents, icodrops
 
     if args.input_html and args.section == "all":
         print("--input-html requires a single section", file=sys.stderr)
@@ -73,21 +64,21 @@ def _scrape(args) -> int:
         return 2
 
     sections = ("upcoming", "active", "ended") if args.section == "all" else (args.section,)
-    event_type = CryptoEventsEvent if args.provider == "cryptoevents" else ICODropsEvent
+    event_type = cryptoevents.CryptoEventsEvent if args.provider == "cryptoevents" else icodrops.ICODropsEvent
     try:
         unique = {}
         for section in sections:
             if args.provider == "cryptoevents":
                 events = (
-                    parse_cryptoevents(args.input_html.read_text(encoding="utf-8"))
+                    cryptoevents.parse_listing(args.input_html.read_text(encoding="utf-8"))
                     if args.input_html
-                    else fetch_cryptoevents(engine=args.engine, timeout_seconds=args.timeout)
+                    else cryptoevents.fetch_listing(engine=args.engine, timeout_seconds=args.timeout)
                 )
             else:
                 events = (
-                    parse_icodrops(args.input_html.read_text(encoding="utf-8"), section=section)
+                    icodrops.parse_listing(args.input_html.read_text(encoding="utf-8"), section=section)
                     if args.input_html
-                    else fetch_icodrops(section, engine=args.engine, timeout_seconds=args.timeout)
+                    else icodrops.fetch_listing(section, engine=args.engine, timeout_seconds=args.timeout)
                 )
             for event in events:
                 unique[event.event_id] = event

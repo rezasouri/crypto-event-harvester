@@ -4,8 +4,8 @@ import pytest
 
 from crypto_event_harvester.probe import PageSnapshot
 from crypto_event_harvester.providers.cryptoevents import (
-    CryptoEventsError,
     LISTING_URL,
+    CryptoEventsError,
     fetch_listing,
     parse_event_dates,
     parse_listing,
@@ -26,7 +26,7 @@ def test_real_dom_cards_not_navigation_and_featured_dedup():
     assert madrid.date_precision == "range"
     assert madrid.featured is False
     assert madrid.location == "Madrid"
-    assert madrid.description == "MERGE Madrid 2026: institutional crypto and Web3. Show more"
+    assert madrid.description == "MERGE Madrid 2026: institutional crypto and Web3."
     assert bridge.start_date == bridge.end_date == "2026-10-27"
     assert bridge.date_precision == "day"
     assert bridge.location == "New York, NY"

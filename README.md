@@ -95,10 +95,10 @@ a planned provider despite blocking GitHub Actions IPs.
 The second provider extracts real conference/event cards from HTML using direct HTTP;
 no API key or paid service is needed:
 
-\`\`\`bash
+```bash
 crypto-harvester scrape --provider cryptoevents --output conferences.json
 crypto-harvester scrape --provider cryptoevents --format csv --output conferences.csv
-\`\`\`
+```
 
 Conference dates are preserved as date-only values or ranges, with null for
 ambiguous dates. Featured/regular duplicates are consolidated. Only the first
