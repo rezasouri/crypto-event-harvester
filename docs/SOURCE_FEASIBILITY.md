@@ -73,3 +73,23 @@ Run: https://github.com/rezasouri/crypto-event-harvester/actions/runs/4047740201
 and regional category pages). Subsequent exclusions reduce false positives; a fresh CI run
 on the updated commit is the source of truth for updated candidate-link counts. No normalized
 events were extracted. Browser rendering for Coindar is not attempted against an access block.
+
+
+## Verified GitHub-hosted HTTP run after corrections
+
+Run: https://github.com/rezasouri/crypto-event-harvester/actions/runs/40477660745
+
+| Source | Status | HTTP | Candidate links | Duration |
+| --- | --- | ---: | ---: | ---: |
+| Coindar | blocked (challenge page) | 403 | 0 | 0.38 s |
+| ICO Drops | listing_evidence | 200 | 51 | 2.03 s |
+| CryptoEvents.global | listing_evidence | 200 | 32 | 1.41 s |
+
+No paid API and only three listing-page fetch attempts. Both successful HTTP sources returned
+the content marker and candidate detail links without JavaScript browser rendering.
+The CryptoEvents.global candidate links can still include site navigation or content pages
+(for example, /press-releases/); Gate 2 must identify genuine event cards and validate fields.
+
+**Gate 1 decision:** pursue ICO Drops and CryptoEvents.global as HTTP-first providers,
+hold Coindar pending an accessible permitted route. No repeated requests or automatic
+browser fallback were attempted on the blocked Coindar page.
