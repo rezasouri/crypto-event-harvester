@@ -61,3 +61,17 @@ requests than the HTTP engine. `--wait-for` applies only to browser engines.
 
 **Gate 0 — Foundation:** developer CLI, fetch strategies and offline tests. Site-specific
 providers, normalized event records and storage are planned for subsequent reviewed pull requests.
+
+
+## Gate 1: evaluate event sources (HTTP first)
+
+```bash
+crypto-harvester sources --source all --engine http --json-out artifacts/sources.json
+# Optional browser rendering after installing the playwright extra:
+crypto-harvester sources --source coindar --engine playwright
+```
+
+This command examines **one listing page per source**, detects candidate detail links and
+reports access failures without treating candidates as confirmed extracted events.
+See [source-feasibility methodology](docs/SOURCE_FEASIBILITY.md). A separate nonblocking
+GitHub Actions workflow attaches live HTTP evidence to the PR.
