@@ -88,3 +88,20 @@ The provider reads real ICO Drops HTML rows (not candidate navigation links).
 Upcoming events without explicit dates remain undated. See
 [the ICO Drops pilot details](docs/ICODROPS_PILOT.md). Coindar remains
 a planned provider despite blocking GitHub Actions IPs.
+
+
+## Gate 3: CryptoEvents.global conference listings
+
+The second provider extracts real conference/event cards from HTML using direct HTTP;
+no API key or paid service is needed:
+
+```bash
+crypto-harvester scrape --provider cryptoevents --output conferences.json
+crypto-harvester scrape --provider cryptoevents --format csv --output conferences.csv
+```
+
+Conference dates are preserved as date-only values or ranges, with null for
+ambiguous dates. Featured/regular duplicates are consolidated. Only the first
+visible event listing is covered (Load more and historical crawling are future
+work). See [Gate 3 details](docs/CRYPTOEVENTS_PILOT.md). The Coindar candidate
+remains on the roadmap for local/browser-based trials.
