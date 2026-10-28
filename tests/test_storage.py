@@ -115,12 +115,19 @@ def test_atomic_rollback_if_one_insert_fails(tmp_path):
     records = fixtures()
     sync_events(db, [], observed_at_utc=T1)
     denied_id = records[1].event_id
+    assert denied_id.startswith("icodrops:")
     with sqlite3.connect(db) as conn:
+        # This is a test-local controlled ID; SQLite cannot parameterize trigger DDL.
         conn.execute(
             "CREATE TRIGGER reject_event BEFORE INSERT ON events "
-            "WHEN NEW.event_id = ? BEGIN SELECT RAISE(ABORT, 'simulate failure'); END",
-            (denied_id,),
+            f"WHEN NEW.event_id = '{denied_id}' "
+            "BEGIN SELECT RAISE(ABORT, 'simulate failure'); END"
         )
+    with pytest.raises(sqlite3.DatabaseError, match="simulate failure"):
+        sync_events(db, records, observed_at_utc=T2)
+    # Earlier inserts in the same batch must not survive the failed transaction.
+    assert store_status(db)["events"] == 0
+    assert store_status(db)["revisions"] == 0
 
 
 def test_filter_and_bounded_read(tmp_path):
