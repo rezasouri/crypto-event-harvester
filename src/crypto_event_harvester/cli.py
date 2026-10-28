@@ -6,6 +6,7 @@ import argparse
 import csv
 import io
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -45,12 +46,21 @@ def build_parser() -> argparse.ArgumentParser:
     scrape.add_argument("--input-html", type=Path, help="Parse saved HTML offline (one section only)")
     scrape.add_argument("--limit", type=int, default=None, help="Limit exported rows; not fetch count")
     scrape.add_argument("--min-events", type=int, default=0, help="Fail if fewer events were extracted")
+    scrape.add_argument("--db", type=Path, help="Incrementally persist normalized events in SQLite")
+
+    store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
+    store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
+    store.add_argument("--action", choices=("status", "list", "history"), default="status")
+    store.add_argument("--provider", help="Optional provider filter for list")
+    store.add_argument("--event-id", help="Event ID for history")
+    store.add_argument("--limit", type=int, default=100, help="Maximum listed events (1 to 1000)")
     return parser
 
 
 def _scrape(args) -> int:
     from .normalization import SCHEMA_VERSION, UnifiedEvent, normalize_events
     from .providers import cryptoevents, icodrops
+    from .storage import sync_events
 
     if args.input_html and args.section == "all":
         print("--input-html requires a single section", file=sys.stderr)
@@ -111,6 +121,10 @@ def _scrape(args) -> int:
             writer.writeheader()
             writer.writerows(event.to_dict() for event in selected)
             output = buffer.getvalue()
+        if args.db:
+            normalized = records if args.schema == "unified" else normalize_events(all_events)
+            result = sync_events(args.db, normalized)
+            print(json.dumps({"database": str(args.db), "sync": result.to_dict()}), file=sys.stderr)
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(output, encoding="utf-8")
@@ -118,8 +132,28 @@ def _scrape(args) -> int:
         else:
             print(output, end="")
         return 0
-    except (OSError, RuntimeError, ValueError, httpx.HTTPError) as exc:
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError, httpx.HTTPError) as exc:
         print(f"scrape failed: {exc}", file=sys.stderr)
+        return 2
+
+
+def _store(args) -> int:
+    from .storage import event_history, list_events, store_status
+
+    try:
+        if args.action == "status":
+            result = store_status(args.db)
+        elif args.action == "list":
+            result = list_events(args.db, provider=args.provider, limit=args.limit)
+        else:
+            if not args.event_id:
+                print("store --action history requires --event-id", file=sys.stderr)
+                return 2
+            result = event_history(args.db, args.event_id)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    except (OSError, ValueError, RuntimeError, sqlite3.DatabaseError) as exc:
+        print(f"store failed: {exc}", file=sys.stderr)
         return 2
 
 
@@ -127,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "scrape":
         return _scrape(args)
+    if args.command == "store":
+        return _store(args)
     if args.command == "sources":
         from .source_feasibility import SOURCES, probe_sources
 

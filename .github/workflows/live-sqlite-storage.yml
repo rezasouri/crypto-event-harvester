@@ -1,0 +1,76 @@
+name: SQLite persistence live smoke (nonblocking)
+
+on:
+  pull_request:
+    paths:
+      - 'src/crypto_event_harvester/storage.py'
+      - 'src/crypto_event_harvester/cli.py'
+      - '.github/workflows/live-sqlite-storage.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  persistence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Scrape both sources into one local SQLite DB
+        run: |
+          crypto-harvester scrape --provider icodrops --section upcoming \
+            --schema unified --min-events 20 \
+            --db artifacts/harvest.sqlite --output artifacts/icodrops.json
+          crypto-harvester scrape --provider cryptoevents \
+            --schema unified --min-events 10 \
+            --db artifacts/harvest.sqlite --output artifacts/cryptoevents.json
+          python - <<'PY'
+          import json
+          from datetime import UTC, datetime, timedelta
+          from pathlib import Path
+          from crypto_event_harvester.normalization import UnifiedEvent
+          from crypto_event_harvester.storage import list_events, store_status, sync_events
+
+          db = Path("artifacts/harvest.sqlite")
+          status_before = store_status(db)
+          assert status_before["events"] >= 30
+          assert status_before["revisions"] == status_before["events"]
+          assert set(status_before["providers"]) == {"icodrops", "cryptoevents"}
+          stored = list_events(db, limit=1000)
+          events = [UnifiedEvent(**item["event"]) for item in stored]
+
+          # Advance observation clock once with no extra HTTP calls.
+          later = datetime.now(UTC) + timedelta(minutes=1)
+          report = sync_events(db, events, observed_at_utc=later.isoformat())
+          assert report.unchanged == len(events)
+          assert report.inserted == report.updated == report.stale_skipped == 0
+          status_after = store_status(db)
+          assert status_before["events"] == status_after["events"]
+          assert status_before["revisions"] == status_after["revisions"]
+          out = {
+              "before": status_before,
+              "after": status_after,
+              "idempotent_replay": report.to_dict(),
+              "live_listing_fetches": 2,
+              "paid_api_calls": 0,
+          }
+          Path("artifacts/persistence-report.json").write_text(
+              json.dumps(out, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(out, indent=2))
+          PY
+      - name: Upload SQLite database and validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sqlite-incremental-pilot
+          path: |
+            artifacts/harvest.sqlite
+            artifacts/persistence-report.json
+          if-no-files-found: warn

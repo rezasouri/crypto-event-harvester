@@ -123,3 +123,23 @@ See [Unified schema v1](docs/UNIFIED_SCHEMA.md). Date-only or unknown event
 dates **never** become inferred UTC timestamps; the two providers currently
 have no verified event timezone. Coindar is still a planned candidate for
 local/browser trials.
+
+
+## Gate 5: incremental local SQLite storage
+
+Opt into persistent snapshots, changed-field revision history, and
+repeatable idempotent scraping without adding more source requests:
+
+```bash
+crypto-harvester scrape --provider icodrops --section upcoming \
+  --schema unified --db data/harvest.sqlite
+crypto-harvester scrape --provider cryptoevents \
+  --schema unified --db data/harvest.sqlite
+crypto-harvester store --db data/harvest.sqlite --action status
+```
+
+Repeated identical content does not create revisions. Changed source data
+adds an immutable revision and older observations never overwrite newer ones.
+Missing records are never deleted based on a short listing fetch. See
+[SQLite incremental storage](docs/SQLITE_STORAGE.md). Coindar is still on
+the shortlist for local/browser feasibility tests.
