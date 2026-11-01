@@ -73,12 +73,16 @@ def build_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--from-date", required=True, help="Inclusive YYYY-MM-DD")
     backfill.add_argument("--to-date", required=True, help="Inclusive YYYY-MM-DD")
     backfill.add_argument(
-        "--action", choices=("run", "status", "reset"), default="run"
+        "--action", choices=("run", "status", "reset", "undated"), default="run"
     )
     backfill.add_argument(
         "--pages", type=int, default=2, help="Maximum listing pages per invocation (1–5)"
     )
     backfill.add_argument("--timeout", type=float, default=20)
+    backfill.add_argument(
+        "--limit", type=int, default=100,
+        help="Maximum undated records to list (1–1000)",
+    )
     backfill.add_argument("--output", type=Path, help="Optional JSON result path")
 
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
@@ -281,12 +285,19 @@ def _audit(args) -> int:
 
 
 def _backfill(args) -> int:
-    from .coindar_backfill import backfill_status, reset_backfill, run_backfill
+    from .coindar_backfill import (
+        backfill_status, backfill_undated, reset_backfill, run_backfill,
+    )
 
     try:
         if args.action == "status":
             payload = backfill_status(
                 args.db, from_date=args.from_date, to_date=args.to_date
+            )
+        elif args.action == "undated":
+            payload = backfill_undated(
+                args.db, from_date=args.from_date, to_date=args.to_date,
+                limit=args.limit,
             )
         elif args.action == "reset":
             payload = {
@@ -294,6 +305,7 @@ def _backfill(args) -> int:
                     args.db, from_date=args.from_date, to_date=args.to_date
                 ),
                 "event_rows_preserved": True,
+                "undated_records_preserved": True,
             }
         else:
             result = run_backfill(
