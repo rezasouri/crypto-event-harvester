@@ -62,3 +62,12 @@ Acceptance evidence: offline interruption/replay tests, cursor-resume tests,
 idempotent SQLite synchronization, request-budget validation, and a live
 workstation run of the homepage plus at least one AJAX page. See
 [Gate 12 implementation](CRYPTOEVENTS_BACKFILL.md).
+
+
+## Gate 13 status — cross-provider candidate identity review
+
+A read-only offline `candidates` command scans the latest normalized
+SQLite event snapshots to surface **possible** cross-provider duplicates
+with strict title/date equality and no explicit project/ticker conflict.
+No automatic source identity merge, revision rewriting or added collection
+requests. See [review-only candidate matching](CROSS_PROVIDER_CANDIDATES.md).

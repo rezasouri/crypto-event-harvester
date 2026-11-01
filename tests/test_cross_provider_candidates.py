@@ -32,9 +32,11 @@ def _samples():
 
 
 def _dated(event, *, title="Major Protocol Upgrade", date="2026-11-10", **kw):
+    details = {"project": None, "ticker": None}
+    details.update(kw)
     return replace(
         event, title=title, start_date=date, end_date=date, date_precision="day",
-        date_text=date, period_key=None, **kw,
+        date_text=date, period_key=None, **details,
     )
 
 

@@ -6,7 +6,6 @@ identities, modifies verified events or rewrites their revision histories.
 from __future__ import annotations
 
 import json
-import re
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
