@@ -21,7 +21,7 @@ def test_icodrops_strict_offline_audit(tmp_path, capsys):
     assert report["parsed_record_count"] == 2
 
 
-def test_coindar_saved_html_link_evidence_not_validated_events(tmp_path, capsys):
+def test_coindar_saved_html_parses_event_cards(tmp_path, capsys):
     path = tmp_path / "coindar.json"
     assert main([
         "audit", "--source", "coindar",
@@ -30,8 +30,8 @@ def test_coindar_saved_html_link_evidence_not_validated_events(tmp_path, capsys)
     ]) == 0
     capsys.readouterr()
     result = json.loads(path.read_text())
-    assert result["status"] == "candidate_links_only"
-    assert result["parsed_record_count"] == 0
+    assert result["status"] == "parsed_listing"
+    assert result["parsed_record_count"] == 4
 
 
 def test_strict_threshold_fails_without_erasing_report(tmp_path, capsys):

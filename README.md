@@ -1,9 +1,9 @@
 # Crypto Event Harvester
 
 A **zero-paid-API, provider-independent** research pilot for scraping cryptocurrency event calendars.
-Two implemented event providers (ICO Drops and CryptoEvents.global) support native/unified
-JSON/CSV exports and incremental SQLite version history. Coindar remains a feasibility
-candidate for normal workstation/browser access, not yet a normalized provider.
+Three independent providers (ICO Drops, CryptoEvents.global and Coindar) support native/unified
+JSON/CSV exports and incremental SQLite version history. Coindar parsing is implemented for
+saved/local HTML; live access remains environment-dependent and must be verified on the workstation.
 
 ## Pilot workflow
 
@@ -162,8 +162,8 @@ crypto-harvester audit --source coindar \
 ```
 
 The audit reports parsed-record quality, optional pagination signals,
-normalization/URL checks and offline first-page comparisons. Coindar link
-evidence is **not** mislabeled as parsed event records. See the
+normalization/URL checks and offline first-page comparisons. Coindar is parsed
+from saved HTML without event-detail requests. See the
 [pilot evaluation report](docs/PILOT_RESULTS.md) for methodology and limits.
 
 
@@ -184,3 +184,26 @@ public Load-more POST. Deduplication and early stops keep fetches bounded.
 The cap is five pages, with no automatic retries or paid APIs.
 See [pagination implementation and limits](docs/CRYPTOEVENTS_PAGINATION.md).
 Coindar remains on the roadmap for a local-HTML-backed parser.
+
+
+## Gate 8: Coindar public HTML provider
+
+On a workstation where the public Coindar calendar is accessible, capture its
+listing HTML once and use the independent parser:
+
+    uv run crypto-harvester probe --url https://www.coindar.org/en \
+      --engine http --save-html .debug/coindar.html
+
+    uv run crypto-harvester scrape --provider coindar --input-html .debug/coindar.html \
+      --schema unified --min-events 10 --db data/harvest.sqlite \
+      --output artifacts/coindar.json
+
+    uv run crypto-harvester audit --source coindar --input-html .debug/coindar.html \
+      --strict --min-records 10 --output artifacts/coindar-audit.json
+
+The parser extracts numeric source IDs, title, coin, ticker, category, description
+and explicitly grouped calendar-day dates. Unknown month/quarter labels stay
+unknown. It uses one listing page only; pagination and historical coverage remain
+separate work. GitHub-hosted runners have previously received HTTP 403 for Coindar,
+so live CI success is not a merge requirement. The representative offline fixture
+covers parser behavior; validate against a fresh local snapshot before production use.

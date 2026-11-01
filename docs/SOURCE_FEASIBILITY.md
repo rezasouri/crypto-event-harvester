@@ -90,6 +90,7 @@ the content marker and candidate detail links without JavaScript browser renderi
 The CryptoEvents.global candidate links can still include site navigation or content pages
 (for example, /press-releases/); Gate 2 must identify genuine event cards and validate fields.
 
-**Gate 1 decision:** pursue ICO Drops and CryptoEvents.global as HTTP-first providers,
-hold Coindar pending an accessible permitted route. No repeated requests or automatic
-browser fallback were attempted on the blocked Coindar page.
+**Gate 1 decision:** pursue ICO Drops and CryptoEvents.global as HTTP-first providers.
+Coindar remains blocked on GitHub-hosted runners, but a local/saved-HTML parser has now
+been implemented. The local parser must still be checked against a fresh workstation snapshot.
+No challenge bypass or automatic browser fallback is attempted on an HTTP 403.

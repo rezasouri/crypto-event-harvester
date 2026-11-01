@@ -36,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--strict", action="store_true", help="Return nonzero if listing evidence is absent"
     )
     scrape = subcommands.add_parser("scrape", help="Extract real crypto event listing rows")
-    scrape.add_argument("--provider", choices=("icodrops", "cryptoevents"), default="icodrops")
+    scrape.add_argument("--provider", choices=("icodrops", "cryptoevents", "coindar"), default="icodrops")
     scrape.add_argument("--section", choices=("upcoming", "active", "ended", "all"), default="upcoming")
     scrape.add_argument("--engine", choices=("http", "playwright", "selenium"), default="http")
     scrape.add_argument("--timeout", type=float, default=20)
@@ -75,11 +75,14 @@ def build_parser() -> argparse.ArgumentParser:
 def _scrape(args) -> int:
     from . import pagination
     from .normalization import SCHEMA_VERSION, UnifiedEvent, normalize_events
-    from .providers import cryptoevents, icodrops
+    from .providers import coindar, cryptoevents, icodrops
     from .storage import sync_events
 
     if args.input_html and args.section == "all":
         print("--input-html requires a single section", file=sys.stderr)
+        return 2
+    if args.provider == "coindar" and args.section != "upcoming":
+        print("coindar currently supports only --section upcoming", file=sys.stderr)
         return 2
     if args.provider == "cryptoevents" and args.section != "upcoming":
         print("cryptoevents currently supports only --section upcoming", file=sys.stderr)
@@ -101,7 +104,11 @@ def _scrape(args) -> int:
         return 2
 
     sections = ("upcoming", "active", "ended") if args.section == "all" else (args.section,)
-    event_type = cryptoevents.CryptoEventsEvent if args.provider == "cryptoevents" else icodrops.ICODropsEvent
+    event_type = {
+        "coindar": coindar.CoindarEvent,
+        "cryptoevents": cryptoevents.CryptoEventsEvent,
+        "icodrops": icodrops.ICODropsEvent,
+    }[args.provider]
     try:
         unique = {}
         for section in sections:
@@ -127,6 +134,12 @@ def _scrape(args) -> int:
                     events = cryptoevents.fetch_listing(
                         engine=args.engine, timeout_seconds=args.timeout
                     )
+            elif args.provider == "coindar":
+                events = (
+                    coindar.parse_listing(args.input_html.read_text(encoding="utf-8"))
+                    if args.input_html
+                    else coindar.fetch_listing(engine=args.engine, timeout_seconds=args.timeout)
+                )
             else:
                 events = (
                     icodrops.parse_listing(args.input_html.read_text(encoding="utf-8"), section=section)
@@ -221,13 +234,8 @@ def _audit(args) -> int:
             print(rendered, end="")
         if not args.strict:
             return 0
-        if args.source == "coindar":
-            # Coindar reports link evidence, never claims validated event records.
-            valid = report["status"] == "candidate_links_only"
-            count = report.get("candidate_detail_link_count", 0)
-        else:
-            valid = report["status"] == "parsed_listing"
-            count = report.get("parsed_record_count", 0)
+        valid = report["status"] == "parsed_listing"
+        count = report.get("parsed_record_count", 0)
         return 0 if valid and count >= args.min_records else 1
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         print(f"audit failed: {exc}", file=sys.stderr)

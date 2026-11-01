@@ -1,7 +1,7 @@
 """Provider-agnostic, date-safe event schema for the scraping pilot.
 
-The two existing providers remain responsible only for source parsing. This
-module maps their native results to a stable, versioned event representation.
+Each independent provider is responsible only for source parsing. This module
+maps native provider records to a stable, versioned event representation.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .providers.coindar import CoindarEvent
     from .providers.cryptoevents import CryptoEventsEvent
     from .providers.icodrops import ICODropsEvent
 
@@ -91,8 +92,9 @@ class UnifiedEvent:
         return asdict(self)
 
 
-def normalize_event(event: ICODropsEvent | CryptoEventsEvent) -> UnifiedEvent:
+def normalize_event(event: ICODropsEvent | CryptoEventsEvent | CoindarEvent) -> UnifiedEvent:
     """Normalize one supported provider event, refusing unknown event types."""
+    from .providers.coindar import CoindarEvent
     from .providers.cryptoevents import CryptoEventsEvent
     from .providers.icodrops import ICODropsEvent
 
@@ -124,6 +126,36 @@ def normalize_event(event: ICODropsEvent | CryptoEventsEvent) -> UnifiedEvent:
             end_at_utc=None,
             total_raised=event.total_raised,
             pre_valuation=event.pre_valuation,
+            featured=None,
+        )
+    if isinstance(event, CoindarEvent):
+        source_id = event.event_id.removeprefix("coindar:")
+        return UnifiedEvent(
+            schema_version=SCHEMA_VERSION,
+            event_id=event.event_id,
+            provider=event.source,
+            source_event_id=source_id,
+            source_url=event.source_url,
+            listing_url=event.listing_url,
+            event_type="crypto_event",
+            title=event.title,
+            project=event.coin,
+            ticker=event.ticker,
+            category=event.category,
+            subtype=None,
+            status="listed",
+            location=None,
+            description=event.description,
+            date_text=event.date_text,
+            start_date=event.event_date,
+            end_date=event.event_date,
+            date_precision=event.date_precision,
+            date_role=event.date_role,
+            timezone=None,
+            start_at_utc=None,
+            end_at_utc=None,
+            total_raised=None,
+            pre_valuation=None,
             featured=None,
         )
     if isinstance(event, CryptoEventsEvent):
@@ -159,7 +191,7 @@ def normalize_event(event: ICODropsEvent | CryptoEventsEvent) -> UnifiedEvent:
     raise TypeError(f"unsupported provider event type: {type(event).__name__}")
 
 
-def normalize_events(events: list[ICODropsEvent | CryptoEventsEvent]) -> list[UnifiedEvent]:
+def normalize_events(events: list[ICODropsEvent | CryptoEventsEvent | CoindarEvent]) -> list[UnifiedEvent]:
     """Preserve input order, making duplicate IDs a validation error."""
     records = [normalize_event(event) for event in events]
     seen: set[str] = set()

@@ -1,6 +1,6 @@
 # Gate 4 — Unified Event Schema v1 (Normalization)
 
-**Purpose:** make two independently scraped sources usable by the same consumer,
+**Purpose:** make independently scraped sources usable by the same consumer,
 without changing provider-specific parsing or creating dates, time zones, or prices
 that were not present on the source page.
 
@@ -25,7 +25,7 @@ Python code can call `normalize_event(event)` or `normalize_events(events)` from
 `crypto_event_harvester.normalization` with parsed native provider dataclasses.
 Unsupported provider types and duplicated normalized IDs fail explicitly.
 
-## Common fields (same names, order and types from both providers)
+## Common fields (same names, order and types from all supported providers)
 
 | Field | Meaning |
 | --- | --- |
@@ -33,7 +33,7 @@ Unsupported provider types and duplicated normalized IDs fail explicitly.
 | `event_id` | Stable within the provider's current native ID scheme, prefixed by provider |
 | `provider`, `source_event_id` | Provenance and provider-local identity |
 | `source_url`, `listing_url` | Original event page and listing page URLs |
-| `event_type` | `token_event` or `conference`; `token_event` includes TGE/distributions, not just ICO sales |
+| event_type | token_event, conference or crypto_event (Coindar calendar events) |
 | `title`, `project`, `ticker` | Name and optional project/token metadata |
 | `category`, `subtype`, `status` | Source category, round label and source listing status |
 | `location`, `description` | Conference fields when present |
@@ -53,9 +53,15 @@ ICO Drops maps its `event_date` to both start and end on day-precision events;
 The `subtype` retains the token offering/round name, and `status` retains the
 listing section (`upcoming`, `active`, `ended`).
 
-CryptoEvents.global maps actual start/end date ranges, `location`, and
-`description`. Its status `listed` means only that it is present on the
-source calendar; it does not claim that the event has started or ended.
+CryptoEvents.global maps actual start/end date ranges, location and
+description. Its status listed means only that it is present on the source
+calendar; it does not claim that the event has started or ended.
+
+Coindar maps the coin name to project, the ticker and category directly,
+and the visible day-group date to a date-only start_date=end_date. The
+listing page does not establish a time-of-day or a timezone-aware instant;
+both UTC timestamp fields and the timezone remain null. Relative added_text
+is retained only in the native provider record, not used as an event date.
 
 **Date-only is not a timestamp.** Neither `UTC midnight` nor the user's local
 timezone is a sound inference from calendar dates. UTC instant and timezone fields
@@ -66,13 +72,13 @@ schema in a separate versioned review.
 
 - Source-specific `--schema native` JSON/CSV keeps its existing exact structure.
 - `--schema unified` adds the versioned normalized contract with an identical
-  flat CSV header for both providers.
+  flat CSV header for all supported providers.
 - Validation checks identity, date precision, ISO dates, ordered date ranges, and
   absence of invented UTC timestamps; normalization never fetches extra pages.
 - Existing native event IDs remain provider-derived; **cross-provider entity
   resolution** and changed-source-ID reconciliation are *not* part of this gate.
 - Price/valuation strings are not converted to numeric currency values.
-- No persistence or change history yet (next roadmap gate).
+- No cross-provider entity resolution; identical coin names/tickers are not merged.
 - Coindar remains on the shortlist for testing on a workstation/browser; CI
   network restrictions on that source are not grounds to discard it.
 

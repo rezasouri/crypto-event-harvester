@@ -51,14 +51,17 @@ def test_cryptoevents_dedups_featured_and_preserves_date_range():
     assert audit["sample_records"][0]["end_date"] == "2026-10-29"
 
 
-def test_coindar_is_retained_as_link_only_feasibility_candidate():
+def test_coindar_parses_event_cards_and_keeps_pagination_unfollowed():
     html = (FIXTURES / "coindar_listing_sample.html").read_text()
     report = audit_snapshot("coindar", _snapshot("coindar", html))
-    assert report["status"] == "candidate_links_only"
-    assert report["candidate_detail_link_count"] == 2
-    assert report["parsed_record_count"] == 0
-    assert report["coindar_provider_implemented"] is False
-    assert report["event_ids"] == []
+    assert report["status"] == "parsed_listing"
+    assert report["parsed_record_count"] == report["unique_event_id_count"] == 4
+    assert report["explicit_calendar_date_count"] == 3
+    assert report["unknown_or_quarter_date_count"] == 1
+    assert report["candidate_detail_link_count"] >= 4
+    assert report["event_ids"] == [
+        "coindar:155001", "coindar:155002", "coindar:155003", "coindar:155004"
+    ]
     assert report["pagination"]["mechanism"] == "pagination_links_visible"
     assert report["pagination"]["next_page_url_samples"] == ["https://www.coindar.org/en?page=2"]
     assert report["pagination"]["historical_coverage_verified"] is False
@@ -72,7 +75,7 @@ def test_saved_html_creates_no_network_request(monkeypatch):
     report = audit_source("coindar", input_html=FIXTURES / "coindar_listing_sample.html")
     assert report["engine"] == "saved_html"
     assert report["listing_fetch_attempts"] == 0
-    assert report["status"] == "candidate_links_only"
+    assert report["status"] == "parsed_listing"
 
 
 def test_live_fetch_is_one_listing_request_with_no_details(monkeypatch, tmp_path):
@@ -173,8 +176,11 @@ def test_compare_rejects_nonmatching_sources_and_unverified_link_reports():
     )
     with pytest.raises(ValueError, match="sources differ"):
         compare_audits(before, other)
+    invalid = audit_snapshot(
+        "coindar", _snapshot("coindar", "<html><body>No event cards</body></html>")
+    )
     with pytest.raises(ValueError, match="parsed_listing"):
-        compare_audits(other, other)
+        compare_audits(invalid, invalid)
 
 
 def test_invalid_timeout_and_source_are_explicit_errors():

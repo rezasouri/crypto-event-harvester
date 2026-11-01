@@ -14,6 +14,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
     [
         ("icodrops", "icodrops_ended.html", "token_event", "2026-09-29", "2026-09-29"),
         ("cryptoevents", "cryptoevents_home.html", "conference", "2026-10-27", "2026-10-29"),
+        ("coindar", "coindar_listing_sample.html", "crypto_event", "2026-11-01", "2026-11-01"),
     ],
 )
 def test_cli_unified_json_export(tmp_path, provider, filename, expected_type, expected_start,
@@ -41,6 +42,7 @@ def test_unified_csv_has_same_columns_for_both_sources(tmp_path):
     for provider, filename in [
         ("icodrops", "icodrops_ended.html"),
         ("cryptoevents", "cryptoevents_home.html"),
+        ("coindar", "coindar_listing_sample.html"),
     ]:
         output = tmp_path / f"{provider}.csv"
         assert main([

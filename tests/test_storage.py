@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from crypto_event_harvester.normalization import normalize_events
+from crypto_event_harvester.providers.coindar import parse_listing as parse_coindar
 from crypto_event_harvester.providers.cryptoevents import parse_listing as parse_conferences
 from crypto_event_harvester.providers.icodrops import parse_listing as parse_icodrops
 from crypto_event_harvester.storage import (
@@ -26,7 +27,8 @@ T3 = "2026-10-28T12:00:00+00:00"
 def fixtures():
     token = parse_icodrops((FIXTURES / "icodrops_upcoming.html").read_text())
     conference = parse_conferences((FIXTURES / "cryptoevents_home.html").read_text())
-    return normalize_events(token + conference)
+    coindar = parse_coindar((FIXTURES / "coindar_listing_sample.html").read_text())
+    return normalize_events(token + conference + coindar)
 
 
 def test_insert_both_providers_and_version_history(tmp_path):
@@ -34,14 +36,14 @@ def test_insert_both_providers_and_version_history(tmp_path):
     records = fixtures()
     report = sync_events(db, records, observed_at_utc=T1)
     assert report.to_dict() == {
-        "inserted": 6, "updated": 0, "unchanged": 0, "stale_skipped": 0, "total": 6
+        "inserted": 10, "updated": 0, "unchanged": 0, "stale_skipped": 0, "total": 10
     }
     status = store_status(db)
     assert status["database_version"] == 1
-    assert status["events"] == status["revisions"] == 6
-    assert status["providers"] == {"cryptoevents": 4, "icodrops": 2}
+    assert status["events"] == status["revisions"] == 10
+    assert status["providers"] == {"coindar": 4, "cryptoevents": 4, "icodrops": 2}
     saved = list_events(db)
-    assert len(saved) == 6
+    assert len(saved) == 10
     assert saved[0]["revision"] == 1
     assert saved[0]["first_seen_at_utc"] == "2026-10-28T10:00:00.000000+00:00"
     assert saved[0]["event"]["event_id"] == saved[0]["event_id"]
@@ -57,9 +59,9 @@ def test_identical_replay_increments_no_revision_and_advances_last_seen(tmp_path
     sync_events(db, records, observed_at_utc=T1)
     result = sync_events(db, records, observed_at_utc=T2)
     assert result.inserted == result.updated == result.stale_skipped == 0
-    assert result.unchanged == 6
+    assert result.unchanged == 10
     status = store_status(db)
-    assert status["events"] == status["revisions"] == 6
+    assert status["events"] == status["revisions"] == 10
     assert status["latest_seen_at_utc"] == "2026-10-28T11:00:00.000000+00:00"
     first = list_events(db)[0]
     assert first["first_seen_at_utc"] == "2026-10-28T10:00:00.000000+00:00"
@@ -106,8 +108,8 @@ def test_missing_records_are_not_removed_by_partial_snapshot(tmp_path):
     sync_events(db, records, observed_at_utc=T1)
     sync_events(db, [records[0]], observed_at_utc=T2)
     sync_events(db, [], observed_at_utc=T3)
-    assert store_status(db)["events"] == 6
-    assert store_status(db)["revisions"] == 6
+    assert store_status(db)["events"] == 10
+    assert store_status(db)["revisions"] == 10
 
 
 def test_atomic_rollback_if_one_insert_fails(tmp_path):
