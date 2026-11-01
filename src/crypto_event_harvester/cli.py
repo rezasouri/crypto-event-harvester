@@ -286,7 +286,10 @@ def _audit(args) -> int:
 
 def _backfill(args) -> int:
     from .coindar_backfill import (
-        backfill_status, backfill_undated, reset_backfill, run_backfill,
+        backfill_status,
+        backfill_undated,
+        reset_backfill,
+        run_backfill,
     )
 
     try:
