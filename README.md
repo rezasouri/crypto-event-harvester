@@ -299,3 +299,21 @@ store before the cursor advances, so a crash can repeat at most the last
 page and idempotent storage prevents duplicate revisions. No event-detail
 pages, paid APIs, retries or unbounded requests are used. See
 [checkpointed CryptoEvents pagination](docs/CRYPTOEVENTS_BACKFILL.md).
+
+
+## Gate 13: review-only cross-provider candidate links
+
+Identify potentially duplicated events in the **existing** SQLite source
+snapshots without calling any website or merging verified source identities:
+
+```bash
+uv run crypto-harvester candidates --db data/harvest.sqlite --limit 100 \
+  --output artifacts/cross-provider-candidates.json
+```
+
+Only different-provider events with an identical normalized title and
+**exactly matching explicit dates** can become review candidates. Generic
+titles and explicit project/ticker conflicts are excluded; month/quarter
+headings do not become guessed dates. Both source links and revision
+numbers remain visible, and no event row or checkpoint is modified.
+See [candidate matching and acceptance limits](docs/CROSS_PROVIDER_CANDIDATES.md).
