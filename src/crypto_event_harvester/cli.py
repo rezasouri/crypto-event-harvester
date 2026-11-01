@@ -311,6 +311,7 @@ def _candidates(args) -> int:
             args.output.write_text(output, encoding="utf-8")
             print(json.dumps({
                 "output": str(args.output),
+                "strategy": report.get("strategy", "exact"),
                 "candidates_total": report["candidates_total"],
                 "returned": report["returned"],
             }, ensure_ascii=False))

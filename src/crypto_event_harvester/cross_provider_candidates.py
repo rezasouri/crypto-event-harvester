@@ -287,9 +287,9 @@ def _similarity_evidence(left: dict, right: dict) -> dict | None:
         return None
     date_score, date_relation = date_result
     if entity_match:
-        if title_score < 0.74:
+        if title_score < 0.70:
             return None
-        score = 0.75 * title_score + 0.15 * date_score + 0.10
+        score = 0.65 * title_score + 0.15 * date_score + 0.20
     else:
         if title_score < 0.90:
             return None
