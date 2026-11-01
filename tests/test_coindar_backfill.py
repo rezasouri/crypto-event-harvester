@@ -1,5 +1,6 @@
 """Offline acceptance tests for Coindar checkpointed historical discovery."""
 import sqlite3
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -15,7 +16,8 @@ START, END = "2026-11-01", "2026-11-02"
 
 
 def _url(page):
-    return past_search_url(START).replace("page=1", f"page={page}")
+    anchor = (date.fromisoformat(END) + timedelta(days=1)).isoformat()
+    return past_search_url(anchor).replace("page=1", f"page={page}")
 
 
 def _html(page, *, next_page=None):
@@ -244,3 +246,47 @@ def test_no_event_date_never_invents_window_membership(tmp_path, monkeypatch):
     assert status["unique_in_window"] == 0
     assert status["unique_ids_seen"] == 4
     assert len(calls) == 1
+
+
+
+def test_search_starts_immediately_after_inclusive_upper_date():
+    assert archive._search_anchor("2026-11-01") == "2026-11-02"
+    assert _url(1) == past_search_url("2026-11-03")
+
+
+def test_legacy_checkpoint_requires_explicit_reset(tmp_path, monkeypatch):
+    db = tmp_path / "historical.sqlite"
+    _fetch(monkeypatch, [_html(1, next_page=2)])
+    archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE coindar_backfill_windows SET anchor_date = NULL "
+            "WHERE window_start = ? AND window_end = ?", (START, END),
+        )
+    status = archive.backfill_status(db, from_date=START, to_date=END)
+    assert status["requires_reset"] is True
+    assert status["expected_anchor_date"] == "2026-11-03"
+    monkeypatch.setattr(archive, "fetch_page", lambda *a, **kw: pytest.fail("network"))
+    with pytest.raises(ValueError, match="--action reset"):
+        archive.run_backfill(db, from_date=START, to_date=END, pages=2)
+    assert store_status(db)["events"] == 3
+    assert archive.reset_backfill(db, from_date=START, to_date=END)
+    assert store_status(db)["events"] == 3
+
+
+def test_out_of_window_dates_reported_without_inventing_events(tmp_path, monkeypatch):
+    db = tmp_path / "historical.sqlite"
+
+    def fetch(url, *, engine, timeout_seconds):
+        return PageSnapshot(url, url, engine, 200, _html(1))
+
+    monkeypatch.setattr(archive, "fetch_page", fetch)
+    result = archive.run_backfill(
+        db, from_date="2026-10-01", to_date="2026-10-31", pages=1
+    )
+    assert result.excluded_after == 3
+    assert result.excluded_before == 0
+    assert result.undated == 1
+    assert result.min_observed_date == "2026-11-01"
+    assert result.max_observed_date == "2026-11-02"
+    assert result.inserted == 0
