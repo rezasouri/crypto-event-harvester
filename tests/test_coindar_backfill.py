@@ -290,3 +290,79 @@ def test_out_of_window_dates_reported_without_inventing_events(tmp_path, monkeyp
     assert result.min_observed_date == "2026-11-01"
     assert result.max_observed_date == "2026-11-02"
     assert result.inserted == 0
+
+
+
+def test_unknown_date_payload_is_preserved_without_assigning_window(tmp_path, monkeypatch):
+    db = tmp_path / "history.sqlite"
+    _fetch(monkeypatch, [_html(1)])
+    result = archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    assert result.undated == 1
+    assert result.inserted == 3
+    status = archive.backfill_status(db, from_date=START, to_date=END)
+    assert status["undated_saved"] == 1
+    records = archive.backfill_undated(db, from_date=START, to_date=END)
+    assert len(records) == 1
+    assert records[0]["event_id"] == "coindar:155004"
+    assert records[0]["event_date"] is None
+    assert records[0]["date_text"] == "Q1 2027"
+    assert store_status(db)["events"] == 3
+
+    assert archive.reset_backfill(db, from_date=START, to_date=END)
+    # Quarantined native records and normalized event records both survive reset.
+    assert archive.backfill_undated(db, from_date=START, to_date=END) == records
+    assert store_status(db)["events"] == 3
+
+
+def test_captured_record_resolution_removes_quarantine(tmp_path, monkeypatch):
+    db = tmp_path / "history.sqlite"
+    raw = _html(1)
+    monkeypatch.setattr(
+        archive, "fetch_page",
+        lambda url, *, engine, timeout_seconds: PageSnapshot(url, url, engine, 200, raw),
+    )
+    first = archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    assert first.inserted == 3
+    assert len(archive.backfill_undated(db, from_date=START, to_date=END)) == 1
+
+    assert archive.reset_backfill(db, from_date=START, to_date=END)
+    revised = raw.replace("<h2>Q1 2027</h2>", "<h2>November 2, 2026 UTC</h2>")
+    monkeypatch.setattr(
+        archive, "fetch_page",
+        lambda url, *, engine, timeout_seconds: PageSnapshot(url, url, engine, 200, revised),
+    )
+    result = archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    assert result.inserted == 1 and result.unchanged == 3
+    assert archive.backfill_undated(db, from_date=START, to_date=END) == []
+    assert store_status(db)["events"] == 4
+
+
+def test_v1_capture_checkpoint_must_reset_before_continuing(tmp_path, monkeypatch):
+    db = tmp_path / "history.sqlite"
+    _fetch(monkeypatch, [_html(1, next_page=2)])
+    archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE coindar_backfill_windows SET capture_version = NULL "
+            "WHERE window_start = ? AND window_end = ?", (START, END),
+        )
+    status = archive.backfill_status(db, from_date=START, to_date=END)
+    assert status["requires_reset"] is True
+    assert status["capture_version"] is None
+    assert status["undated_saved"] == 1
+    monkeypatch.setattr(archive, "fetch_page", lambda *a, **kw: pytest.fail("network"))
+    with pytest.raises(ValueError, match="--action reset"):
+        archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    assert store_status(db)["events"] == 3
+
+
+def test_undated_listing_is_bounded_and_network_free(tmp_path, monkeypatch):
+    db = tmp_path / "history.sqlite"
+    _fetch(monkeypatch, [_html(1)])
+    archive.run_backfill(db, from_date=START, to_date=END, pages=1)
+    monkeypatch.setattr(archive, "fetch_page", lambda *a, **kw: pytest.fail("network"))
+    assert len(archive.backfill_undated(
+        db, from_date=START, to_date=END, limit=1,
+    )) == 1
+    with pytest.raises(ValueError, match="limit"):
+        archive.backfill_undated(db, from_date=START, to_date=END, limit=0)

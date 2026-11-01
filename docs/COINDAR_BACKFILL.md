@@ -137,3 +137,37 @@ The website's page ordering and full historical completeness still require
 further observation. The newly validated upper-cutoff behavior corrects
 the start of the search, but does **not** prove all older events will
 appear on a finite number of pages.
+
+
+## Unknown-date record retention (post-live correction)
+
+A live two-page scan returned 40 distinct source IDs, but only 26 records
+had exact calendar dates; those 26 were **already stored** by the prior
+Coindar scrape (reported as unchanged). The other 14 had no exact day.
+Previously their IDs advanced the cursor while their full native payloads
+were discarded. The checkpoint is now capture-versioned (**version 2**):
+older checkpoints require explicit reset and re-scan so those records
+cannot silently be skipped again.
+
+New table `coindar_backfill_undated` retains native public listing
+metadata for date-unknown records, **separately** from normalized events.
+These records do **not** count as in-window events and never overwrite
+previously stored date-verified normalized records. The undated cache is
+independent of the per-window cursor and survives `--action reset`.
+If a future successful in-window observation supplies an exact day for
+the same event, the obsolete undated cache entry is removed.
+
+Inspection requires **zero network requests**:
+
+```bash
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action undated \
+  --limit 20 --output artifacts/coindar-undated.json
+```
+
+The status report now provides `undated_saved` and `capture_version`.
+The `undated` field in a run describes observed unknown-date records;
+`undated_saved` counts quarantined distinct IDs for the window.
+A one-time explicit checkpoint reset is necessary to recover raw
+metadata from already-skipped pages. **This intentionally costs at most
+the bounded re-scan request budget, not unlimited retries.**

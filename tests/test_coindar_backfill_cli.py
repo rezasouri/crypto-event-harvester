@@ -61,3 +61,32 @@ def test_cli_status_does_not_create_missing_sqlite_file(tmp_path, capsys):
     ]) == 2
     assert "does not exist" in capsys.readouterr().err
     assert not db.exists()
+
+
+
+def test_cli_undated_action_requires_no_network(tmp_path, monkeypatch, capsys):
+    db = tmp_path / "history.sqlite"
+    calls = []
+
+    def fetch(url, *, engine, timeout_seconds):
+        calls.append(url)
+        return PageSnapshot(url, url, engine, 200, FIXTURE.read_text())
+
+    monkeypatch.setattr(archive, "fetch_page", fetch)
+    args = ["backfill", "--db", str(db), "--from-date", "2026-11-01",
+            "--to-date", "2026-11-02"]
+    assert main(args + ["--pages", "1"]) == 0
+    assert len(calls) == 1
+    capsys.readouterr()
+    monkeypatch.setattr(archive, "fetch_page", lambda *a, **kw: 1 / 0)
+    assert main(args + ["--action", "undated", "--limit", "10"]) == 0
+    records = json.loads(capsys.readouterr().out)
+    assert len(records) == 1
+    assert records[0]["date_text"] == "Q1 2027"
+    assert records[0]["event_date"] is None
+
+    assert main(args + ["--action", "reset"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["undated_records_preserved"] is True
+    assert main(args + ["--action", "undated"]) == 0
+    assert json.loads(capsys.readouterr().out) == records
