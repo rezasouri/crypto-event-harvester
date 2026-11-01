@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--from-date", required=True, help="Inclusive YYYY-MM-DD")
     backfill.add_argument("--to-date", required=True, help="Inclusive YYYY-MM-DD")
     backfill.add_argument(
-        "--action", choices=("run", "status", "reset", "undated"), default="run"
+        "--action", choices=("run", "status", "reset", "undated", "enrich"), default="run"
     )
     backfill.add_argument(
         "--pages", type=int, default=2, help="Maximum listing pages per invocation (1–5)"
@@ -288,6 +288,7 @@ def _backfill(args) -> int:
     from .coindar_backfill import (
         backfill_status,
         backfill_undated,
+        enrich_undated,
         reset_backfill,
         run_backfill,
     )
@@ -301,6 +302,10 @@ def _backfill(args) -> int:
             payload = backfill_undated(
                 args.db, from_date=args.from_date, to_date=args.to_date,
                 limit=args.limit,
+            )
+        elif args.action == "enrich":
+            payload = enrich_undated(
+                args.db, from_date=args.from_date, to_date=args.to_date,
             )
         elif args.action == "reset":
             payload = {
