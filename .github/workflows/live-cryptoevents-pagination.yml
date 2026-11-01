@@ -1,0 +1,71 @@
+name: CryptoEvents bounded pagination (nonblocking)
+
+on:
+  pull_request:
+    paths:
+      - 'src/crypto_event_harvester/pagination.py'
+      - 'src/crypto_event_harvester/cli.py'
+      - '.github/workflows/live-cryptoevents-pagination.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paginate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Fetch one homepage plus one public pagination page
+        run: |
+          crypto-harvester scrape --provider cryptoevents --pages 2 \
+            --schema unified --min-events 30 --db artifacts/harvest.sqlite \
+            --output artifacts/cryptoevents-paginated.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from crypto_event_harvester.storage import store_status
+
+          path = Path("artifacts/cryptoevents-paginated.json")
+          result = json.loads(path.read_text(encoding="utf-8"))
+          events = result["events"]
+          assert len(events) >= 30
+          assert len(events) == result["extracted_count"]
+          assert len({item["event_id"] for item in events}) == len(events)
+          assert all(item["provider"] == "cryptoevents" for item in events)
+          assert all(item["schema_version"] == "1.0" for item in events)
+          assert all(item["start_at_utc"] is None for item in events)
+          assert all(item["source_url"].startswith("https://cryptoevents.global/") for item in events)
+          db = store_status("artifacts/harvest.sqlite")
+          assert db["events"] == len(events)
+          summary = {
+              "source": "cryptoevents",
+              "max_pages": 2,
+              "planned_listing_gets": 1,
+              "planned_ajax_posts": 1,
+              "unique_events": len(events),
+              "explicit_date_events": sum(item["start_date"] is not None for item in events),
+              "db_events": db["events"],
+              "paid_api_calls": 0,
+          }
+          Path("artifacts/pagination-report.json").write_text(
+              json.dumps(summary, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Upload pagination proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryptoevents-bounded-pages
+          path: |
+            artifacts/cryptoevents-paginated.json
+            artifacts/pagination-report.json
+            artifacts/harvest.sqlite
+          if-no-files-found: warn
