@@ -6,7 +6,6 @@ the last successful page, with idempotent event revision reconciliation.
 """
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import date
@@ -116,6 +115,12 @@ def backfill_status(
     first, last = _dates(from_date, to_date)
     conn = _open_db(database_path, create=False)
     try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='coindar_backfill_windows'"
+        ).fetchone()
+        if not exists:
+            return {"window_start": first, "window_end": last, "state": "not_started"}
         row = _window(conn, first, last)
         if row is None:
             return {"window_start": first, "window_end": last, "state": "not_started"}
@@ -141,6 +146,12 @@ def reset_backfill(database_path: str | Path, *, from_date: str, to_date: str) -
     conn = _open_db(database_path, create=False)
     try:
         with conn:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='coindar_backfill_windows'"
+            ).fetchone()
+            if not exists:
+                return False
             row = _window(conn, first, last)
             if row is None:
                 return False

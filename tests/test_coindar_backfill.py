@@ -226,7 +226,13 @@ def test_page_403_does_not_advance_checkpoint_or_remove_events(tmp_path, monkeyp
 
 def test_no_event_date_never_invents_window_membership(tmp_path, monkeypatch):
     db = tmp_path / "events.sqlite"
-    calls = _fetch(monkeypatch, [_html(1)])
+    calls = []
+
+    def fetch(url, *, engine, timeout_seconds):
+        calls.append(url)
+        return PageSnapshot(url, url, engine, 200, _html(1))
+
+    monkeypatch.setattr(archive, "fetch_page", fetch)
     result = archive.run_backfill(
         db, from_date="2026-10-01", to_date="2026-10-31", pages=1
     )
