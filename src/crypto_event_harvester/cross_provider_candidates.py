@@ -5,6 +5,7 @@ identities, modifies verified events or rewrites their revision histories.
 """
 from __future__ import annotations
 
+import heapq
 import json
 import unicodedata
 from datetime import date
@@ -350,9 +351,10 @@ def match_similar_candidates(
     eligible_items.sort(key=lambda pair: (
         pair[0]["start_date"], pair[0]["end_date"], pair[0]["event_id"]
     ))
-    candidates: list[dict] = []
+    candidate_heap: list[tuple[float, int, dict]] = []
     total = 0
     pairs_examined = 0
+    pair_order = 0
     for index, (left, left_revision) in enumerate(eligible_items):
         left_end = date.fromisoformat(left["end_date"])
         for right, right_revision in eligible_items[index + 1:]:
@@ -366,18 +368,27 @@ def match_similar_candidates(
             if evidence is None or evidence["score"] < min_score:
                 continue
             total += 1
-            if len(candidates) < limit:
-                candidates.append({
-                    "match_type": "review_required",
-                    "confidence_band": (
-                        "high" if evidence["score"] >= 0.92
-                        and evidence["title_similarity"] >= 0.90
-                        else "medium"
-                    ),
-                    "evidence": evidence,
-                    "left": _evidence(left, left_revision),
-                    "right": _evidence(right, right_revision),
-                })
+            candidate = {
+                "match_type": "review_required",
+                "confidence_band": (
+                    "high" if evidence["score"] >= 0.92
+                    and evidence["title_similarity"] >= 0.90
+                    else "medium"
+                ),
+                "evidence": evidence,
+                "left": _evidence(left, left_revision),
+                "right": _evidence(right, right_revision),
+            }
+            # Keep the highest-scoring bounded result set without retaining
+            # every pair in memory. Earlier pairs win exact score ties.
+            heap_item = (evidence["score"], -pair_order, candidate)
+            pair_order += 1
+            if len(candidate_heap) < limit:
+                heapq.heappush(candidate_heap, heap_item)
+            elif heap_item[:2] > candidate_heap[0][:2]:
+                heapq.heapreplace(candidate_heap, heap_item)
+
+    candidates = [item[2] for item in candidate_heap]
     candidates.sort(key=lambda item: (
         -item["evidence"]["score"],
         item["left"]["event_id"],
