@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS coindar_backfill_windows (
     id INTEGER PRIMARY KEY,
     window_start TEXT NOT NULL,
     window_end TEXT NOT NULL,
+    anchor_date TEXT,
     next_url TEXT,
     next_page INTEGER NOT NULL CHECK (next_page >= 1),
     pages_completed INTEGER NOT NULL CHECK (pages_completed >= 0),
@@ -58,6 +59,11 @@ class BackfillResult:
     updated: int
     unchanged: int
     stale_skipped: int
+    excluded_before: int = 0
+    excluded_after: int = 0
+    undated: int = 0
+    min_observed_date: str | None = None
+    max_observed_date: str | None = None
 
     def to_dict(self) -> dict:
         from dataclasses import asdict
@@ -77,12 +83,28 @@ def _dates(window_start: str, window_end: str) -> tuple[str, str]:
     return window_start, window_end
 
 
+def _search_anchor(last: str) -> str:
+    """Past Events start is an exclusive upper date cutoff."""
+    try:
+        return (date.fromisoformat(last) + timedelta(days=1)).isoformat()
+    except OverflowError as exc:
+        raise ValueError("--to-date exceeds supported range") from exc
+
+
 def _open_db(path: str | Path, *, create: bool) -> sqlite3.Connection:
     conn = _connect(Path(path), create=create)
     try:
         if create:
             with conn:
                 conn.executescript(_ARCHIVE_SCHEMA)
+                columns = {row["name"] for row in conn.execute(
+                    "PRAGMA table_info(coindar_backfill_windows)"
+                )}
+                if "anchor_date" not in columns:
+                    conn.execute(
+                        "ALTER TABLE coindar_backfill_windows "
+                        "ADD COLUMN anchor_date TEXT"
+                    )
         return conn
     except Exception:
         conn.close()
@@ -96,9 +118,9 @@ def _window(conn: sqlite3.Connection, first: str, last: str) -> sqlite3.Row | No
     ).fetchone()
 
 
-def _checked_next_url(url: str, *, first: str, page: int) -> None:
+def _checked_next_url(url: str, *, anchor: str, page: int) -> None:
     params = _search_params(url)
-    baseline = _search_params(past_search_url(first))
+    baseline = _search_params(past_search_url(anchor))
     if (
         params is None or baseline is None
         or int(params["page"]) != page
@@ -128,8 +150,12 @@ def backfill_status(
             "SELECT COUNT(*) AS seen, COALESCE(SUM(in_window), 0) AS kept "
             "FROM coindar_backfill_seen WHERE window_id = ?", (row["id"],)
         ).fetchone()
+        stored_anchor = row["anchor_date"] if "anchor_date" in row.keys() else None
         return {
             "window_start": first, "window_end": last,
+            "search_anchor_date": stored_anchor,
+            "expected_anchor_date": _search_anchor(last),
+            "requires_reset": stored_anchor != _search_anchor(last),
             "state": row["state"], "stop_reason": row["stop_reason"],
             "pages_completed": row["pages_completed"],
             "next_page": row["next_page"] if row["state"] == "active" else None,
@@ -172,23 +198,34 @@ def run_backfill(
     ordering may change over time.
     """
     first, last = _dates(from_date, to_date)
+    anchor = _search_anchor(last)
     if not 1 <= pages <= MAX_PAGES:
         raise ValueError(f"--pages must be between 1 and {MAX_PAGES}")
     if timeout_seconds <= 0:
         raise ValueError("--timeout must be positive")
     conn = _open_db(database_path, create=True)
     done, added, inserted, updated, unchanged, stale = 0, 0, 0, 0, 0, 0
+    excluded_before, excluded_after, undated = 0, 0, 0
+    min_date: str | None = None
+    max_date: str | None = None
     try:
         with conn:
             row = _window(conn, first, last)
             if row is None:
                 conn.execute(
                     "INSERT INTO coindar_backfill_windows "
-                    "(window_start, window_end, next_url, next_page, pages_completed, state) "
-                    "VALUES (?, ?, ?, 1, 0, 'active')",
-                    (first, last, past_search_url(first)),
+                    "(window_start, window_end, anchor_date, next_url, "
+                    "next_page, pages_completed, state) "
+                    "VALUES (?, ?, ?, ?, 1, 0, 'active')",
+                    (first, last, anchor, past_search_url(anchor)),
                 )
                 row = _window(conn, first, last)
+        if row["anchor_date"] != anchor:
+            raise ValueError(
+                "Checkpoint uses an obsolete date cutoff; run "
+                "backfill --action reset for this window. Stored event "
+                "rows remain intact."
+            )
         if row["state"] != "active":
             return BackfillResult(
                 first, last, row["state"], row["stop_reason"], 0,
@@ -200,7 +237,7 @@ def run_backfill(
             if row["state"] != "active":
                 break
             current_url, page_number = row["next_url"], row["next_page"]
-            _checked_next_url(current_url, first=first, page=page_number)
+            _checked_next_url(current_url, anchor=anchor, page=page_number)
             snapshot = fetch_page(current_url, engine="http", timeout_seconds=timeout_seconds)
             info = summarize_page(snapshot)
             if info["issue"] or (snapshot.status_code is not None and snapshot.status_code >= 400):
@@ -210,13 +247,21 @@ def run_backfill(
                 )
             if urlsplit(snapshot.final_url).scheme != "https":
                 raise CoindarError("Coindar historical page redirected away from HTTPS")
-            _checked_next_url(snapshot.final_url, first=first, page=page_number)
+            _checked_next_url(snapshot.final_url, anchor=anchor, page=page_number)
             parsed = parse_listing(snapshot.html)
+            dates = [e.event_date for e in parsed if e.event_date is not None]
+            if dates:
+                low, high = min(dates), max(dates)
+                min_date = low if min_date is None else min(min_date, low)
+                max_date = high if max_date is None else max(max_date, high)
+            excluded_before += sum(e.event_date is not None and e.event_date < first for e in parsed)
+            excluded_after += sum(e.event_date is not None and e.event_date > last for e in parsed)
+            undated += sum(e.event_date is None for e in parsed)
             next_link = next_page_url(
                 snapshot.html, current_url=snapshot.final_url, page_number=page_number
             )
             if next_link is not None:
-                _checked_next_url(next_link, first=first, page=page_number + 1)
+                _checked_next_url(next_link, anchor=anchor, page=page_number + 1)
             known = {
                 item["event_id"] for item in conn.execute(
                     "SELECT event_id FROM coindar_backfill_seen WHERE window_id = ?",
@@ -271,6 +316,7 @@ def run_backfill(
             row["pages_completed"],
             row["next_page"] if row["state"] == "active" else None,
             added, inserted, updated, unchanged, stale,
+            excluded_before, excluded_after, undated, min_date, max_date,
         )
     finally:
         conn.close()
