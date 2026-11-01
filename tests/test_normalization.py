@@ -183,6 +183,6 @@ def test_coindar_coin_category_and_listing_day_are_normalized():
 def test_coindar_unknown_quarter_heading_stays_unknown():
     event = normalize_event(_coindar_events()[-1])
     assert event.event_id == "coindar:155004"
-    assert event.date_text == "Unknown"
+    assert event.date_text == "Q1 2027"
     assert event.date_precision == "unknown"
     assert event.start_date is None and event.end_date is None

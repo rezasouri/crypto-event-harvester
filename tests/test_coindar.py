@@ -46,7 +46,7 @@ def test_each_card_uses_its_nearest_preceding_day_heading():
 def test_unknown_quarter_heading_is_not_promoted_to_a_day():
     event = _events()[-1]
     assert event.event_id == "coindar:155004"
-    assert event.date_text == "Unknown"
+    assert event.date_text == "Q1 2027"
     assert event.event_date is None
     assert event.date_precision == "unknown"
     assert event.date_role == "unknown"
