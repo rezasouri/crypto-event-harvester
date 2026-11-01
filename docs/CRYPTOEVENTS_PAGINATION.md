@@ -80,3 +80,13 @@ conditions, request bounds and CLI/SQLite integration.
 A dedicated GitHub Actions workflow makes one real listing GET and one
 real pagination POST, verifies at least 30 unique normalized records, and
 uploads the database, JSON records and a report as artifacts.
+
+
+### Pagination stop rule
+
+The public JSON response can contain 20 raw items while fewer than 20
+pass URL/field validation or are unique. Early completion therefore checks
+the **raw response length**, not the count of accepted records. This avoids
+prematurely stopping when a page has a malformed or repeated event entry.
+The loop also stops on empty responses, no new event identities, or the
+user-specified page budget.

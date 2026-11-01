@@ -107,9 +107,12 @@ def test_page_two_adds_distinct_records_with_one_post(monkeypatch):
 
     def extra(offset, **kwargs):
         offsets.append((offset, kwargs["start_day_utc"]))
-        return pagination.parse_ajax_records([
-            _ajax_row(slug=f"new-conference-{i}") for i in range(20)
-        ])
+        return (
+            pagination.parse_ajax_records([
+                _ajax_row(slug=f"new-conference-{i}") for i in range(20)
+            ]),
+            20,
+        )
 
     monkeypatch.setattr(pagination, "fetch_ajax_page", extra)
     result = pagination.fetch_paginated_listing(max_pages=2, start_day_utc=123456)
@@ -127,7 +130,7 @@ def test_early_stop_on_partial_page(monkeypatch):
 
     def extra(offset, **kw):
         offsets.append(offset)
-        return pagination.parse_ajax_records([_ajax_row(slug="new-short-page")])
+        return pagination.parse_ajax_records([_ajax_row(slug="new-short-page")]), 1
 
     monkeypatch.setattr(pagination, "fetch_ajax_page", extra)
     result = pagination.fetch_paginated_listing(max_pages=5, start_day_utc=10)
@@ -138,7 +141,7 @@ def test_early_stop_on_partial_page(monkeypatch):
 
 def test_early_stop_on_empty_page(monkeypatch):
     monkeypatch.setattr(pagination, "fetch_listing", lambda **kw: parse_listing(FIXTURE.read_text()))
-    monkeypatch.setattr(pagination, "fetch_ajax_page", lambda *a, **kw: [])
+    monkeypatch.setattr(pagination, "fetch_ajax_page", lambda *a, **kw: ([], 0))
     result = pagination.fetch_paginated_listing(max_pages=5)
     assert result.stop_reason == "empty_page"
     assert result.pages_fetched == 2
@@ -147,7 +150,7 @@ def test_early_stop_on_empty_page(monkeypatch):
 def test_early_stop_when_no_new_ids(monkeypatch):
     original = parse_listing(FIXTURE.read_text())
     monkeypatch.setattr(pagination, "fetch_listing", lambda **kw: original)
-    monkeypatch.setattr(pagination, "fetch_ajax_page", lambda *a, **kw: original)
+    monkeypatch.setattr(pagination, "fetch_ajax_page", lambda *a, **kw: (original, 20))
     result = pagination.fetch_paginated_listing(max_pages=5)
     assert result.stop_reason == "no_new_ids"
     assert len(result.events) == 4
@@ -187,8 +190,8 @@ def test_http_post_is_form_encoded_and_bounded(monkeypatch):
         return response
 
     monkeypatch.setattr(pagination.httpx, "post", fake_post)
-    records = pagination.fetch_ajax_page(20, start_day_utc=1788000000)
-    assert len(records) == 1
+    records, raw_count = pagination.fetch_ajax_page(20, start_day_utc=1788000000)
+    assert len(records) == raw_count == 1
     assert captured["url"] == pagination.AJAX_URL
     assert captured["data"]["offset"] == "20"
     assert captured["data"]["postperpage"] == "20"
@@ -210,3 +213,24 @@ def test_invalid_json_raises(monkeypatch):
     monkeypatch.setattr(pagination.httpx, "post", lambda *a, **kw: response)
     with pytest.raises(CryptoEventsError, match="JSON"):
         pagination.fetch_ajax_page(20, start_day_utc=123456)
+
+
+def test_raw_count_not_filtered_record_count_controls_next_page(monkeypatch):
+    original = parse_listing(FIXTURE.read_text())
+    monkeypatch.setattr(pagination, "fetch_listing", lambda **kw: original)
+    offsets = []
+
+    def extra_page(offset, **kw):
+        offsets.append(offset)
+        if offset == 20:
+            # Twenty raw elements, but two are unparseable/duplicate.
+            entries = [_ajax_row(slug=f"event-{i}") for i in range(18)]
+            return pagination.parse_ajax_records(entries), 20
+        return [], 0
+
+    monkeypatch.setattr(pagination, "fetch_ajax_page", extra_page)
+    result = pagination.fetch_paginated_listing(max_pages=3)
+    assert offsets == [20, 40]
+    assert result.pages_fetched == 3
+    assert result.stop_reason == "empty_page"
+    assert len(result.events) == len(original) + 18

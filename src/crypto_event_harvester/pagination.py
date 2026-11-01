@@ -125,8 +125,8 @@ def parse_ajax_records(data: object) -> list[CryptoEventsEvent]:
 
 def fetch_ajax_page(
     offset: int, *, start_day_utc: int, timeout_seconds: float = 20
-) -> list[CryptoEventsEvent]:
-    """One bounded POST reproducing the site's Load-more request; no retries."""
+) -> tuple[list[CryptoEventsEvent], int]:
+    """Return parsed records and the unfiltered raw count; no retries."""
     if offset < PAGE_SIZE or offset % PAGE_SIZE:
         raise ValueError("offset must be a positive page-size multiple")
     if timeout_seconds <= 0:
@@ -154,7 +154,8 @@ def fetch_ajax_page(
         raw = response.json()
     except ValueError as exc:
         raise CryptoEventsError("CryptoEvents pagination did not return JSON") from exc
-    return parse_ajax_records(raw)
+    records = parse_ajax_records(raw)
+    return records, len(raw)
 
 
 def fetch_paginated_listing(
@@ -182,7 +183,7 @@ def fetch_paginated_listing(
     pages, requests, reason = 1, 0, "page_limit"
     for page in range(1, max_pages):
         offset = page * PAGE_SIZE
-        new_batch = fetch_ajax_page(
+        new_batch, raw_count = fetch_ajax_page(
             offset, start_day_utc=start, timeout_seconds=timeout_seconds
         )
         requests += 1
@@ -201,7 +202,7 @@ def fetch_paginated_listing(
         if new_records == 0:
             reason = "no_new_ids"
             break
-        if len(new_batch) < PAGE_SIZE:
+        if raw_count < PAGE_SIZE:
             reason = "partial_page"
             break
     return PageResult(list(found.values()), pages, requests, reason)
