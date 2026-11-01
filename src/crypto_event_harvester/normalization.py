@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date
+
+from .date_precision import coarse_period
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,8 +17,9 @@ if TYPE_CHECKING:
     from .providers.cryptoevents import CryptoEventsEvent
     from .providers.icodrops import ICODropsEvent
 
-SCHEMA_VERSION = "1.0"
-VALID_PRECISIONS = frozenset({"day", "range", "quarter", "unknown"})
+SCHEMA_VERSION = "1.1"
+LEGACY_SCHEMA_VERSION = "1.0"
+VALID_PRECISIONS = frozenset({"day", "range", "month", "quarter", "unknown"})
 VALID_DATE_ROLES = frozenset({"listed", "start", "unknown"})
 
 
@@ -54,9 +57,10 @@ class UnifiedEvent:
     total_raised: str | None
     pre_valuation: str | None
     featured: bool | None
+    period_key: str | None = None
 
     def __post_init__(self) -> None:
-        if self.schema_version != SCHEMA_VERSION:
+        if self.schema_version not in {LEGACY_SCHEMA_VERSION, SCHEMA_VERSION}:
             raise ValueError("unsupported schema_version")
         if not self.provider or not self.source_event_id:
             raise ValueError("missing source event identity")
@@ -66,6 +70,15 @@ class UnifiedEvent:
             raise ValueError("event title and source URLs are mandatory")
         if self.date_precision not in VALID_PRECISIONS:
             raise ValueError(f"invalid date_precision: {self.date_precision}")
+        if self.schema_version == LEGACY_SCHEMA_VERSION:
+            if self.date_precision == "month" or self.period_key is not None:
+                raise ValueError("schema 1.0 cannot encode a structured month/period")
+        elif self.date_precision in {"month", "quarter"}:
+            precision, key = coarse_period(self.date_text)
+            if self.date_precision != precision or self.period_key != key:
+                raise ValueError("period_key must match an explicit coarse date label")
+        elif self.period_key is not None:
+            raise ValueError("period_key is only valid for month or quarter precision")
         if self.date_role not in VALID_DATE_ROLES:
             raise ValueError(f"invalid date_role: {self.date_role}")
         known = self.date_precision in {"day", "range"}
@@ -127,6 +140,8 @@ def normalize_event(event: ICODropsEvent | CryptoEventsEvent | CoindarEvent) -> 
             total_raised=event.total_raised,
             pre_valuation=event.pre_valuation,
             featured=None,
+            period_key=coarse_period(event.date_text)[1]
+            if event.date_precision == "quarter" else None,
         )
     if isinstance(event, CoindarEvent):
         source_id = event.event_id.removeprefix("coindar:")
@@ -157,6 +172,8 @@ def normalize_event(event: ICODropsEvent | CryptoEventsEvent | CoindarEvent) -> 
             total_raised=None,
             pre_valuation=None,
             featured=None,
+            period_key=coarse_period(event.date_text)[1]
+            if event.date_precision in {"month", "quarter"} else None,
         )
     if isinstance(event, CryptoEventsEvent):
         source_id = event.event_id.removeprefix("cryptoevents:")
