@@ -302,7 +302,9 @@ def _similarity_evidence(left: dict, right: dict) -> dict | None:
         "token_jaccard": token_score,
         "date_similarity": date_score,
         "date_relation": date_relation,
-        "project_match": "project" in entity_matches if left.get("project") and right.get("project") else None,
+        "project_match": (
+            "project" in entity_matches if left.get("project") and right.get("project") else None
+        ),
         "ticker_match": "ticker" in entity_matches if left.get("ticker") and right.get("ticker") else None,
         "shared_entity_fields": entity_matches,
         "threshold_path": "entity_corroborated" if entity_match else "title_only_strict",
