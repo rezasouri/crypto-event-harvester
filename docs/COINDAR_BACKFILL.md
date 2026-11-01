@@ -90,3 +90,50 @@ GitHub-hosted runners cannot reliably fetch Coindar (prior HTTP 403). The
 offline tests cover resume, date-window isolation, SQL durability, HTTP
 failure, tampered URLs, terminal no-request replay and CLI. A real multi-run
 workstation check is required before claiming live historical completeness.
+
+
+## Corrected historical date semantics and existing checkpoints
+
+The first live workstation test of the October 1–November 1, 2026 range
+found 80 distinct event IDs over four pages, but none passed the local
+date-range filter. Inspection of the public Coindar **Past Events** link
+shows why: `start=2026-11-01` returns October 31 and earlier.
+The public `start` argument is an **exclusive upper date cutoff**,
+not a lower bound.
+
+The corrected search starts at **one day after `--to-date`** and
+moves backward through numbered page links. For `--from-date 2026-10-01`
+and `--to-date 2026-11-01`, the source request therefore uses
+`start=2026-11-02`; the inclusive lower and upper range bounds
+remain enforced against parsed event dates locally.
+
+Existing checkpoints created before this correction were initialized with
+the wrong search anchor. For safety, a new nullable `anchor_date`
+column identifies these obsolete checkpoints. Their `status` includes
+`requires_reset: true` and the next `run` refuses to continue them,
+instead of silently skipping events. **Reset deletes only the checkpoint
+and its seen-ID set; normalized event rows and revisions are preserved.**
+
+```bash
+# Use these exact dates when repairing the original local test window.
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action status
+
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action reset
+
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --pages 2
+```
+
+Per-run results additionally report counts of dated events falling
+before/after the requested interval, unknown-date records, and the
+minimum/maximum observed day. These are useful for diagnosing whether
+a zero-insert scan resulted from the source response, date extraction
+or persistent deduplication. Coarse month/quarter dates are not
+automatically assigned a made-up day and remain excluded.
+
+The website's page ordering and full historical completeness still require
+further observation. The newly validated upper-cutoff behavior corrects
+the start of the search, but does **not** prove all older events will
+appear on a finite number of pages.
