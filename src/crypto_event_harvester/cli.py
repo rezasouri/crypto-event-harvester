@@ -49,7 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     scrape.add_argument("--db", type=Path, help="Incrementally persist normalized events in SQLite")
     scrape.add_argument(
         "--pages", type=int, default=1,
-        help="CryptoEvents only: listing page plus up to 4 additional HTTP batches",
+        help="CryptoEvents/Coindar: up to five listing pages (default: one)",
+    )
+    scrape.add_argument(
+        "--start-date", help="Coindar Past Events only: fixed YYYY-MM-DD filter anchor",
     )
 
     audit = subcommands.add_parser("audit", help="First-page quality and coverage evidence")
@@ -73,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _scrape(args) -> int:
-    from . import pagination
+    from . import coindar_pagination, pagination
     from .normalization import SCHEMA_VERSION, UnifiedEvent, normalize_events
     from .providers import coindar, cryptoevents, icodrops
     from .storage import sync_events
@@ -81,8 +84,11 @@ def _scrape(args) -> int:
     if args.input_html and args.section == "all":
         print("--input-html requires a single section", file=sys.stderr)
         return 2
-    if args.provider == "coindar" and args.section != "upcoming":
-        print("coindar currently supports only --section upcoming", file=sys.stderr)
+    if args.provider == "coindar" and args.section not in {"upcoming", "ended"}:
+        print("coindar supports only --section upcoming or ended", file=sys.stderr)
+        return 2
+    if args.start_date and (args.provider != "coindar" or args.section != "ended"):
+        print("--start-date requires --provider coindar --section ended", file=sys.stderr)
         return 2
     if args.provider == "cryptoevents" and args.section != "upcoming":
         print("cryptoevents currently supports only --section upcoming", file=sys.stderr)
@@ -96,8 +102,8 @@ def _scrape(args) -> int:
     if not 1 <= args.pages <= pagination.MAX_PAGES:
         print(f"--pages must be between 1 and {pagination.MAX_PAGES}", file=sys.stderr)
         return 2
-    if args.pages > 1 and args.provider != "cryptoevents":
-        print("--pages > 1 is supported only for cryptoevents", file=sys.stderr)
+    if args.pages > 1 and args.provider == "icodrops":
+        print("--pages > 1 is supported only for cryptoevents and coindar", file=sys.stderr)
         return 2
     if args.pages > 1 and (args.input_html or args.engine != "http"):
         print("--pages > 1 requires a live HTTP source, not --input-html or a browser", file=sys.stderr)
@@ -135,11 +141,28 @@ def _scrape(args) -> int:
                         engine=args.engine, timeout_seconds=args.timeout
                     )
             elif args.provider == "coindar":
-                events = (
-                    coindar.parse_listing(args.input_html.read_text(encoding="utf-8"))
-                    if args.input_html
-                    else coindar.fetch_listing(engine=args.engine, timeout_seconds=args.timeout)
-                )
+                if args.input_html:
+                    if args.start_date:
+                        from datetime import date
+
+                        try:
+                            date.fromisoformat(args.start_date)
+                        except ValueError as exc:
+                            raise ValueError("--start-date must be YYYY-MM-DD") from exc
+                    events = coindar.parse_listing(args.input_html.read_text(encoding="utf-8"))
+                else:
+                    batch = coindar_pagination.fetch_coindar_pages(
+                        section=section, max_pages=args.pages, engine=args.engine,
+                        timeout_seconds=args.timeout, start_date=args.start_date,
+                    )
+                    events = batch.events
+                    if args.pages > 1:
+                        print(json.dumps({"coindar_pagination": {
+                            "pages_fetched": batch.pages_fetched,
+                            "extra_requests": batch.extra_requests,
+                            "stop_reason": batch.stop_reason,
+                            "section": section,
+                        }}), file=sys.stderr)
             else:
                 events = (
                     icodrops.parse_listing(args.input_html.read_text(encoding="utf-8"), section=section)

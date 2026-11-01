@@ -207,3 +207,24 @@ unknown. It uses one listing page only; pagination and historical coverage remai
 separate work. GitHub-hosted runners have previously received HTTP 403 for Coindar,
 so live CI success is not a merge requirement. The representative offline fixture
 covers parser behavior; validate against a fresh local snapshot before production use.
+
+
+## Gate 9: bounded Coindar pagination and historical listing
+
+The Coindar public listing now supports up to five linked HTML pages, with
+no detail-page requests and no paid API. Historical records use the website's
+Past Events search filter and can be persisted to the same SQLite database:
+
+```bash
+uv run crypto-harvester scrape --provider coindar --section upcoming \
+  --pages 3 --schema unified --db data/harvest.sqlite \
+  --output artifacts/coindar-upcoming.json
+
+uv run crypto-harvester scrape --provider coindar --section ended \
+  --start-date 2026-11-01 --pages 3 --schema unified \
+  --db data/harvest.sqlite --output artifacts/coindar-past.json
+```
+
+See [Coindar bounded pagination](docs/COINDAR_PAGINATION.md).
+The three-page mode requires live HTTP access from a machine where Coindar
+can be opened; CI validates the same logic with offline fixtures.
