@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date
-
 from typing import TYPE_CHECKING
 
 from .date_precision import coarse_period
