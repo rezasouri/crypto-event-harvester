@@ -62,10 +62,13 @@ def test_coindar_can_sync_to_existing_sqlite_contract(tmp_path, capsys):
 
 
 def test_coindar_rejects_unsupported_sections_and_pagination(capsys):
-    assert main(["scrape", "--provider", "coindar", "--section", "ended"]) == 2
-    assert "upcoming" in capsys.readouterr().err
-    assert main(["scrape", "--provider", "coindar", "--pages", "2"]) == 2
-    assert "only for cryptoevents" in capsys.readouterr().err
+    assert main(["scrape", "--provider", "coindar", "--section", "all"]) == 2
+    assert "upcoming or ended" in capsys.readouterr().err
+    assert main([
+        "scrape", "--provider", "coindar", "--pages", "2",
+        "--input-html", str(FIXTURE),
+    ]) == 2
+    assert "live HTTP" in capsys.readouterr().err
 
 
 def test_coindar_minimum_event_threshold_is_enforced(tmp_path):
