@@ -1,6 +1,6 @@
 # Gate 4 — Unified Event Schema v1 (Normalization)
 
-**Purpose:** make two independently scraped sources usable by the same consumer,
+**Purpose:** make independently scraped sources usable by the same consumer,
 without changing provider-specific parsing or creating dates, time zones, or prices
 that were not present on the source page.
 
@@ -25,7 +25,7 @@ Python code can call `normalize_event(event)` or `normalize_events(events)` from
 `crypto_event_harvester.normalization` with parsed native provider dataclasses.
 Unsupported provider types and duplicated normalized IDs fail explicitly.
 
-## Common fields (same names, order and types from both providers)
+## Common fields (same names, order and types from all supported providers)
 
 | Field | Meaning |
 | --- | --- |
@@ -72,7 +72,7 @@ schema in a separate versioned review.
 
 - Source-specific `--schema native` JSON/CSV keeps its existing exact structure.
 - `--schema unified` adds the versioned normalized contract with an identical
-  flat CSV header for both providers.
+  flat CSV header for all supported providers.
 - Validation checks identity, date precision, ISO dates, ordered date ranges, and
   absence of invented UTC timestamps; normalization never fetches extra pages.
 - Existing native event IDs remain provider-derived; **cross-provider entity

@@ -3,7 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from crypto_event_harvester.providers.coindar import CoindarError, _event_identity, parse_listing
+from crypto_event_harvester.probe import PageSnapshot
+from crypto_event_harvester.providers.coindar import (
+    BASE_URL, LISTING_URL, CoindarError, _event_identity, fetch_listing, parse_listing,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "coindar_listing_sample.html"
 
@@ -86,3 +89,31 @@ def test_navigation_and_foreign_event_links_are_not_emitted():
 def test_structural_failures_are_explicit(html, message):
     with pytest.raises(CoindarError, match=message):
         parse_listing(html)
+
+
+def test_live_fetch_requests_only_the_listing_page(monkeypatch):
+    html = FIXTURE.read_text(encoding="utf-8")
+    calls = []
+
+    def fake_fetch(url, *, engine, timeout_seconds):
+        calls.append(url)
+        return PageSnapshot(url, url, engine, 200, html)
+
+    monkeypatch.setattr("crypto_event_harvester.providers.coindar.fetch_page", fake_fetch)
+    events = fetch_listing(engine="http")
+    assert len(events) == 4
+    assert calls == [LISTING_URL]
+    assert BASE_URL == "https://www.coindar.org"
+
+
+def test_live_fetch_reports_http_403_without_retry_or_bypass(monkeypatch):
+    calls = []
+
+    def blocked(url, *, engine, timeout_seconds):
+        calls.append(url)
+        return PageSnapshot(url, url, engine, 403, "<title>Just a moment...</title>")
+
+    monkeypatch.setattr("crypto_event_harvester.providers.coindar.fetch_page", blocked)
+    with pytest.raises(CoindarError, match="unavailable"):
+        fetch_listing()
+    assert calls == [LISTING_URL]

@@ -1,7 +1,7 @@
 """Provider-agnostic, date-safe event schema for the scraping pilot.
 
-The two existing providers remain responsible only for source parsing. This
-module maps their native results to a stable, versioned event representation.
+Each independent provider is responsible only for source parsing. This module
+maps native provider records to a stable, versioned event representation.
 """
 
 from __future__ import annotations

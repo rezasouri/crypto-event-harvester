@@ -1,6 +1,6 @@
 # Gate 6 — Pilot evaluation, coverage and workstation Coindar investigation
 
-This stage turns the two working providers into a **measurable pilot** and adds
+This stage turns the working providers into a **measurable pilot** and adds
 a reproducible **local** diagnostic for Coindar. It is not a claim of a full
 historic archive, manual field-level accuracy, or production readiness.
 
