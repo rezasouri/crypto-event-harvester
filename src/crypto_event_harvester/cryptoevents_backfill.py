@@ -14,10 +14,10 @@ from pathlib import Path
 
 from .normalization import normalize_events
 from .pagination import MAX_PAGES, PAGE_SIZE, fetch_ajax_page
-
-MAX_TOTAL_PAGES = 100
 from .providers.cryptoevents import fetch_listing
 from .storage import _connect, sync_events
+
+MAX_TOTAL_PAGES = 100
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS cryptoevents_crawl_runs (
