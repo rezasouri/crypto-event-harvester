@@ -6,10 +6,10 @@ import httpx
 
 url = "https://cryptoevents.global/wp-content/themes/cryptoevents/ajax/filters.php"
 today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-body = [
-    ("action", "index"), ("offset", "20"), ("postperpage", "20"),
-    ("categories[]", "16"), ("index_filters[start_date]", str(int(today.timestamp()))),
-]
+body = {
+    "action": "index", "offset": "20", "postperpage": "20",
+    "categories[]": "16", "index_filters[start_date]": str(int(today.timestamp())),
+}
 try:
     with httpx.Client(timeout=25, follow_redirects=True, headers={
         "Referer": "https://cryptoevents.global/",
