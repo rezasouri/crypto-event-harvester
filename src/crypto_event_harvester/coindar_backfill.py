@@ -6,6 +6,7 @@ the last successful page, with idempotent event revision reconciliation.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS coindar_backfill_windows (
     window_start TEXT NOT NULL,
     window_end TEXT NOT NULL,
     anchor_date TEXT,
+    capture_version INTEGER,
     next_url TEXT,
     next_page INTEGER NOT NULL CHECK (next_page >= 1),
     pages_completed INTEGER NOT NULL CHECK (pages_completed >= 0),
@@ -41,6 +43,13 @@ CREATE TABLE IF NOT EXISTS coindar_backfill_seen (
     event_id TEXT NOT NULL,
     in_window INTEGER NOT NULL CHECK (in_window IN (0, 1)),
     PRIMARY KEY(window_id, event_id)
+);
+CREATE TABLE IF NOT EXISTS coindar_backfill_undated (
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    PRIMARY KEY(window_start, window_end, event_id)
 );
 """
 
@@ -105,6 +114,11 @@ def _open_db(path: str | Path, *, create: bool) -> sqlite3.Connection:
                         "ALTER TABLE coindar_backfill_windows "
                         "ADD COLUMN anchor_date TEXT"
                     )
+                if "capture_version" not in columns:
+                    conn.execute(
+                        "ALTER TABLE coindar_backfill_windows "
+                        "ADD COLUMN capture_version INTEGER"
+                    )
         return conn
     except Exception:
         conn.close()
@@ -151,17 +165,61 @@ def backfill_status(
             "FROM coindar_backfill_seen WHERE window_id = ?", (row["id"],)
         ).fetchone()
         stored_anchor = row["anchor_date"] if "anchor_date" in row.keys() else None
+        capture_version = (
+            row["capture_version"] if "capture_version" in row.keys() else None
+        )
+        has_undated_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='coindar_backfill_undated'"
+        ).fetchone()
+        undated_saved = 0
+        if has_undated_table:
+            undated_saved = conn.execute(
+                "SELECT COUNT(*) FROM coindar_backfill_undated "
+                "WHERE window_start = ? AND window_end = ?",
+                (first, last),
+            ).fetchone()[0]
         return {
             "window_start": first, "window_end": last,
             "search_anchor_date": stored_anchor,
             "expected_anchor_date": _search_anchor(last),
-            "requires_reset": stored_anchor != _search_anchor(last),
+            "requires_reset": (
+                stored_anchor != _search_anchor(last) or capture_version != 2
+            ),
+            "capture_version": capture_version,
+            "undated_saved": undated_saved,
             "state": row["state"], "stop_reason": row["stop_reason"],
             "pages_completed": row["pages_completed"],
             "next_page": row["next_page"] if row["state"] == "active" else None,
             "next_url": row["next_url"] if row["state"] == "active" else None,
             "unique_ids_seen": stats["seen"], "unique_in_window": stats["kept"],
         }
+    finally:
+        conn.close()
+
+
+def backfill_undated(
+    database_path: str | Path, *, from_date: str, to_date: str, limit: int = 100,
+) -> list[dict]:
+    """Inspect quarantined unknown-date records without another HTTP request."""
+    first, last = _dates(from_date, to_date)
+    if not 1 <= limit <= 1000:
+        raise ValueError("--limit must be between 1 and 1000")
+    conn = _open_db(database_path, create=False)
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='coindar_backfill_undated'"
+        ).fetchone()
+        if not exists:
+            return []
+        rows = conn.execute(
+            "SELECT payload_json FROM coindar_backfill_undated "
+            "WHERE window_start = ? AND window_end = ? "
+            "ORDER BY event_id LIMIT ?",
+            (first, last, limit),
+        ).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
     finally:
         conn.close()
 
@@ -214,17 +272,17 @@ def run_backfill(
             if row is None:
                 conn.execute(
                     "INSERT INTO coindar_backfill_windows "
-                    "(window_start, window_end, anchor_date, next_url, "
+                    "(window_start, window_end, anchor_date, capture_version, next_url, "
                     "next_page, pages_completed, state) "
-                    "VALUES (?, ?, ?, ?, 1, 0, 'active')",
+                    "VALUES (?, ?, ?, 2, ?, 1, 0, 'active')",
                     (first, last, anchor, past_search_url(anchor)),
                 )
                 row = _window(conn, first, last)
-        if row["anchor_date"] != anchor:
+        if row["anchor_date"] != anchor or row["capture_version"] != 2:
             raise ValueError(
-                "Checkpoint uses an obsolete date cutoff; run "
-                "backfill --action reset for this window. Stored event "
-                "rows remain intact."
+                "Checkpoint uses obsolete date or undated-record capture rules; "
+                "run backfill --action reset for this window. Stored event "
+                "rows and quarantined records remain intact."
             )
         if row["state"] != "active":
             return BackfillResult(
@@ -289,6 +347,25 @@ def run_backfill(
             else:
                 state, reason = "active", None
             with conn:
+                conn.executemany(
+                    "INSERT INTO coindar_backfill_undated "
+                    "(window_start, window_end, event_id, payload_json) "
+                    "VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(window_start, window_end, event_id) "
+                    "DO UPDATE SET payload_json = excluded.payload_json",
+                    [
+                        (first, last, event.event_id,
+                         json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True))
+                        for event in parsed if event.event_date is None
+                    ],
+                )
+                # Date-resolved events are removed from quarantine only after
+                # a successful event sync for this specific in-window date.
+                conn.executemany(
+                    "DELETE FROM coindar_backfill_undated "
+                    "WHERE window_start = ? AND window_end = ? AND event_id = ?",
+                    [(first, last, event.event_id) for event in in_window],
+                )
                 conn.executemany(
                     "INSERT OR IGNORE INTO coindar_backfill_seen "
                     "(window_id, event_id, in_window) VALUES (?, ?, ?)",
