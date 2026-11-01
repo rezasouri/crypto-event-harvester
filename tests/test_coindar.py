@@ -5,7 +5,12 @@ import pytest
 
 from crypto_event_harvester.probe import PageSnapshot
 from crypto_event_harvester.providers.coindar import (
-    BASE_URL, LISTING_URL, CoindarError, _event_identity, fetch_listing, parse_listing,
+    BASE_URL,
+    LISTING_URL,
+    CoindarError,
+    _event_identity,
+    fetch_listing,
+    parse_listing,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "coindar_listing_sample.html"
