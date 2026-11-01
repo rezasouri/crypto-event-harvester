@@ -10,7 +10,6 @@ import pytest
 from crypto_event_harvester.cli import main
 from crypto_event_harvester.coindar_backfill import (
     backfill_undated,
-    enrich_undated,
     run_backfill,
 )
 from crypto_event_harvester.date_precision import coarse_period

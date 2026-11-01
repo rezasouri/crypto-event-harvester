@@ -9,8 +9,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date
 
-from .date_precision import coarse_period
 from typing import TYPE_CHECKING
+
+from .date_precision import coarse_period
 
 if TYPE_CHECKING:
     from .providers.coindar import CoindarEvent
