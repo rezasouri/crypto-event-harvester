@@ -122,3 +122,44 @@ backfill remain work to be validated, rather than assertions in this report.
 
 **Next logical work:** use actual local Coindar HTML to build the provider,
 then implement bounded pagination and evaluate incremental historical reach.
+
+
+## Verified live quality snapshot: 2026-11-01
+
+The initial live quality run has now completed successfully:
+
+- [GitHub Actions: two-source quality audit](https://github.com/rezasouri/crypto-event-harvester/actions/runs/41280030191)
+- [Offline tests and Ruff](https://github.com/rezasouri/crypto-event-harvester/actions/runs/41280030081)
+
+| Source | Parsed unique records | Explicit calendar dates | Unknown/quarter dates | Listing HTTP fetch attempts | HTML bytes | Paging evidence |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| ICO Drops Upcoming | 50 | 3 | 47 | 1 | 231416 | No pagination controls detected on first page |
+| CryptoEvents.global | 21 | 21 | 0 | 1 | 90056 | Dynamic `Load more` visible |
+
+All 71 records passed **structural** normalization and source-host identity
+checks. **137 offline tests passed** and Ruff passed. Exactly two listing
+fetch attempts were made by the quality workflow, and no paid API was used.
+The normalized calendar dates have no inferred clock time or UTC offset.
+
+**Key finding:** for ICO Drops Upcoming, only **3 of 50** visible rows
+carried exact day-level dates. Consequently, this provider is valuable for
+project/round discovery but not sufficient on its own for a fully dated
+event calendar. Never invent a timestamp for the other 47 records.
+
+### Decision for the next development round
+
+| Area | Decision | Reason |
+| --- | --- | --- |
+| ICO Drops | Continue, with known date-coverage limitation | First-page HTTP extraction works; date coverage only 3/50 in this observation |
+| CryptoEvents.global | Continue; prioritize bounded `Load more` pagination | 21/21 explicit date ranges on first page, but page coverage incomplete |
+| Coindar | **Retain**; workstation HTML audit needed | Browser-accessible to project owner, GitHub Actions IP restrictions do not invalidate local access |
+
+**Not yet accepted as proven:** ≥95% title/link accuracy or ≥90% date-field
+accuracy against human-reviewed source ground truth, multi-day availability,
+full historical reach, and a working local Coindar parser. These require
+actual labeled samples or more than one independently observed live snapshot.
+The existing tests confirm parser/structural behavior, not all those claims.
+
+Next recommended reviewed PR after this evaluation: add a bounded,
+resume-safe pagination adapter for CryptoEvents.global, or build Coindar
+from an accessible locally captured HTML fixture if one is available.
