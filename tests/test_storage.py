@@ -43,7 +43,7 @@ def test_insert_both_providers_and_version_history(tmp_path):
     assert status["events"] == status["revisions"] == 10
     assert status["providers"] == {"coindar": 4, "cryptoevents": 4, "icodrops": 2}
     saved = list_events(db)
-    assert len(saved) == 6
+    assert len(saved) == 10
     assert saved[0]["revision"] == 1
     assert saved[0]["first_seen_at_utc"] == "2026-10-28T10:00:00.000000+00:00"
     assert saved[0]["event"]["event_id"] == saved[0]["event_id"]
@@ -61,7 +61,7 @@ def test_identical_replay_increments_no_revision_and_advances_last_seen(tmp_path
     assert result.inserted == result.updated == result.stale_skipped == 0
     assert result.unchanged == 10
     status = store_status(db)
-    assert status["events"] == status["revisions"] == 6
+    assert status["events"] == status["revisions"] == 10
     assert status["latest_seen_at_utc"] == "2026-10-28T11:00:00.000000+00:00"
     first = list_events(db)[0]
     assert first["first_seen_at_utc"] == "2026-10-28T10:00:00.000000+00:00"

@@ -25,6 +25,12 @@ DATE_LABEL = re.compile(
     r"Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},\s+\d{4})(?:\s+UTC)?$",
     re.I,
 )
+COARSE_DATE_LABEL = re.compile(
+    r"^(?:Q[1-4]\s+\d{4}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+    r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|"
+    r"Nov(?:ember)?|Dec(?:ember)?)\s+\d{4})(?:\s+UTC)?$",
+    re.I,
+)
 ADDED_LABEL = re.compile(r"^(?:Added\s+.+|Yesterday|Today)$", re.I)
 TICKER = re.compile(r"^[A-Z0-9][A-Z0-9.-]{1,11}$")
 
@@ -153,6 +159,9 @@ def _date_for_event(anchor: Tag, container: Tag) -> tuple[str | None, str, str]:
             parsed, label, precision = _parse_day(value)
             if parsed:
                 return parsed, label, precision
+        if COARSE_DATE_LABEL.fullmatch(value):
+            # A nearer month/quarter heading must not inherit the prior day's date.
+            return None, value, "unknown"
     return None, "Unknown", "unknown"
 
 
