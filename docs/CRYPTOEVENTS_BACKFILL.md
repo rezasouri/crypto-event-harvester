@@ -89,3 +89,25 @@ not that the live site will always return the same page contents. Run the
 command from a workstation where CryptoEvents.global is accessible and share
 the JSON output. The observed request budget and number of unique events
 should be reviewed before treating historical coverage as adequate.
+
+
+## Live workflow observation — 2026-11-01
+
+The nonblocking GitHub Actions workflow exercised the actual public homepage
+and pagination endpoint in two separate command invocations:
+
+| Metric | First invocation | Resume invocation |
+| --- | ---: | ---: |
+| Homepage GET | 1 | 0 |
+| AJAX POST | 1 | 2 |
+| Listing pages | 2 | 2 |
+| Total cumulative pages | 2 | 4 |
+
+The combined SQLite store contained **61 unique CryptoEvents records**
+(59 with explicit date values; 2 retained with unknown date precision).
+The database count matched the unique event count. Paid API calls: **0**.
+This confirms that the second invocation resumed from its saved offset
+without refetching the homepage in this run.
+
+This is one observed snapshot, not a guarantee of future page sizes or
+complete historical coverage. The local source can change between runs.
