@@ -214,3 +214,26 @@ def test_same_provider_pairs_are_never_compared(tmp_path):
     result = match_similar_candidates(db)
     assert result.overlapping_pairs_examined == 0
     assert result.candidates_total == 0
+
+
+def test_limit_returns_highest_scores_not_first_encountered_pairs(tmp_path):
+    db = tmp_path / "events.sqlite"
+    ico, coindar, conference = _samples()
+    first = _dated(
+        ico, title="Ethereum Shanghai Upgrade", project="Ethereum",
+        event_type="crypto_event",
+    )
+    second = _dated(
+        coindar, title="Ethereum Shanghai Ecosystem Upgrade", project="Ethereum",
+        event_type="crypto_event",
+    )
+    third = _dated(
+        conference, title="Ethereum Shanghai Upgrade", project="Ethereum",
+        event_type="crypto_event",
+    )
+    sync_events(db, [first, second, third])
+    result = match_similar_candidates(db, limit=1)
+    assert result.candidates_total == 3
+    assert len(result.candidates) == 1
+    assert result.candidates[0]["evidence"]["title_similarity"] == 1.0
+    assert result.candidates[0]["evidence"]["score"] == 1.0

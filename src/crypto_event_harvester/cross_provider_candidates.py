@@ -8,10 +8,10 @@ from __future__ import annotations
 import heapq
 import json
 import unicodedata
-from datetime import date
-from difflib import SequenceMatcher
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from .storage import _connect
