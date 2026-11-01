@@ -204,7 +204,7 @@ def test_cli_similarity_json_export(tmp_path, capsys):
 
 def test_same_provider_pairs_are_never_compared(tmp_path):
     db = tmp_path / "events.sqlite"
-    coindar, _, _ = _samples()
+    _, coindar, _ = _samples()
     first = _dated(coindar, title="Ethereum Shanghai Upgrade")
     second = _dated(
         replace(coindar, event_id="coindar:another", source_event_id="another"),

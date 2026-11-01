@@ -309,12 +309,14 @@ def _candidates(args) -> int:
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(output, encoding="utf-8")
-            print(json.dumps({
+            summary = {
                 "output": str(args.output),
-                "strategy": report.get("strategy", "exact"),
                 "candidates_total": report["candidates_total"],
                 "returned": report["returned"],
-            }, ensure_ascii=False))
+            }
+            if "strategy" in report:
+                summary["strategy"] = report["strategy"]
+            print(json.dumps(summary, ensure_ascii=False))
         else:
             print(output, end="")
         return 0
