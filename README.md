@@ -228,3 +228,23 @@ uv run crypto-harvester scrape --provider coindar --section ended \
 See [Coindar bounded pagination](docs/COINDAR_PAGINATION.md).
 The three-page mode requires live HTTP access from a machine where Coindar
 can be opened; CI validates the same logic with offline fixtures.
+
+
+## Gate 10: incremental, checkpointed Coindar historical discovery
+
+Unlike one-shot Coindar pagination, `backfill` saves each successful public
+HTML listing page to SQLite and resumes directly from the next visible link:
+
+```bash
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --pages 2
+# Resume with the same command: do not refetch already committed pages.
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --pages 2
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action status
+```
+
+See [Coindar historical checkpoints](docs/COINDAR_BACKFILL.md). The upper
+date bound is a local filter, **not** a verified upstream server-side range.
+Unknown dates are not invented or included in a historical window.

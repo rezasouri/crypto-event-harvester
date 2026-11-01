@@ -66,6 +66,21 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--min-records", type=int, default=0)
     audit.add_argument("--strict", action="store_true", help="Return nonzero on insufficient evidence")
 
+    backfill = subcommands.add_parser(
+        "backfill", help="Checkpointed Coindar Past Events discovery over a date window"
+    )
+    backfill.add_argument("--db", required=True, type=Path)
+    backfill.add_argument("--from-date", required=True, help="Inclusive YYYY-MM-DD")
+    backfill.add_argument("--to-date", required=True, help="Inclusive YYYY-MM-DD")
+    backfill.add_argument(
+        "--action", choices=("run", "status", "reset"), default="run"
+    )
+    backfill.add_argument(
+        "--pages", type=int, default=2, help="Maximum listing pages per invocation (1–5)"
+    )
+    backfill.add_argument("--timeout", type=float, default=20)
+    backfill.add_argument("--output", type=Path, help="Optional JSON result path")
+
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
     store.add_argument("--action", choices=("status", "list", "history"), default="status")
@@ -265,6 +280,38 @@ def _audit(args) -> int:
         return 2
 
 
+def _backfill(args) -> int:
+    from .coindar_backfill import backfill_status, reset_backfill, run_backfill
+
+    try:
+        if args.action == "status":
+            payload = backfill_status(
+                args.db, from_date=args.from_date, to_date=args.to_date
+            )
+        elif args.action == "reset":
+            payload = {
+                "checkpoint_reset": reset_backfill(
+                    args.db, from_date=args.from_date, to_date=args.to_date
+                ),
+                "event_rows_preserved": True,
+            }
+        else:
+            result = run_backfill(
+                args.db, from_date=args.from_date, to_date=args.to_date,
+                pages=args.pages, timeout_seconds=args.timeout,
+            )
+            payload = result.to_dict()
+        output = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(output, encoding="utf-8")
+        print(output, end="")
+        return 0
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError, httpx.HTTPError) as exc:
+        print(f"backfill failed: {exc}", file=sys.stderr)
+        return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "scrape":
@@ -273,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
         return _audit(args)
     if args.command == "store":
         return _store(args)
+    if args.command == "backfill":
+        return _backfill(args)
     if args.command == "sources":
         from .source_feasibility import SOURCES, probe_sources
 
