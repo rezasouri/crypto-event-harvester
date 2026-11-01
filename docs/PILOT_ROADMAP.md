@@ -47,3 +47,18 @@ A representative offline fixture and parser/normalization/SQLite tests are
 included. A fresh local snapshot from a workstation where Coindar is accessible
 is still required to confirm the parser against the current raw DOM. Pagination
 and historical backfill are explicitly out of scope for this gate.
+
+
+## Gate 12 status — checkpointed CryptoEvents pagination
+
+The one-shot Gate 7 paginator remains capped at five pages per invocation
+and is still useful for a single quick export. Gate 12 adds a separate
+cross-run cursor for repeatable collection: a frozen UTC-day filter,
+per-page SQLite synchronization, resume from the next AJAX offset, a
+five-request per-run cap and a 100-page total crawl cap. Checkpoints can be
+inspected or reset without deleting event rows or revisions.
+
+Acceptance evidence: offline interruption/replay tests, cursor-resume tests,
+idempotent SQLite synchronization, request-budget validation, and a live
+workstation run of the homepage plus at least one AJAX page. See
+[Gate 12 implementation](CRYPTOEVENTS_BACKFILL.md).
