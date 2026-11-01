@@ -52,7 +52,10 @@ def test_reject_bad_coindar_options_without_network(capsys):
                  "--input-html", str(FIXTURE)]) == 2
     assert main(["scrape", "--provider", "coindar", "--pages", "2",
                  "--engine", "selenium"]) == 2
-    assert "requires" in capsys.readouterr().err or True
+    errors = capsys.readouterr().err
+    assert "upcoming or ended" in errors
+    assert "requires" in errors
+    assert "supported only for cryptoevents and coindar" in errors
 
 
 def test_single_page_saved_ended_is_still_allowed(tmp_path):

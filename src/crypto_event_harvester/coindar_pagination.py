@@ -100,8 +100,10 @@ def next_page_url(html: str, *, current_url: str, page_number: int) -> str | Non
     if current.path not in {"/en", SEARCH_PATH}:
         raise ValueError("Coindar pagination source must be an event listing")
     current_params = _search_params(current_url) if current.path == SEARCH_PATH else None
-    if current.path == SEARCH_PATH and current_params is None:
-        raise ValueError("Invalid current Coindar search URL")
+    if current.path == SEARCH_PATH and (
+        current_params is None or int(current_params["page"]) != page_number
+    ):
+        raise ValueError("Current Coindar search page does not match expected page number")
 
     want = page_number + 1
     soup = BeautifulSoup(html, "html.parser")
@@ -166,8 +168,11 @@ def fetch_coindar_pages(
             "www.coindar.org", "coindar.org",
         } or landed.path not in {"/en", SEARCH_PATH}:
             raise CoindarError("Coindar listing redirected outside the expected public calendar")
-        if page > 1 and _search_params(snapshot.final_url) is None:
-            raise CoindarError("Coindar pagination redirect changed the search URL")
+        if urlsplit(url).path == SEARCH_PATH:
+            expected = _search_params(url)
+            landed_params = _search_params(snapshot.final_url)
+            if landed_params is None or expected != landed_params:
+                raise CoindarError("Coindar redirect changed the requested page filters")
         parsed = parse_listing(snapshot.html)
         fetched += 1
         gained = 0
