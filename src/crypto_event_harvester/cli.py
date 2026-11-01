@@ -85,6 +85,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     backfill.add_argument("--output", type=Path, help="Optional JSON result path")
 
+    cryptoevents_backfill = subcommands.add_parser(
+        "cryptoevents-backfill",
+        help="Checkpointed, bounded CryptoEvents.global listing pagination",
+    )
+    cryptoevents_backfill.add_argument("--db", required=True, type=Path)
+    cryptoevents_backfill.add_argument(
+        "--start-date", help="Frozen UTC start-day filter YYYY-MM-DD (default: current UTC day)",
+    )
+    cryptoevents_backfill.add_argument(
+        "--action", choices=("run", "status", "reset"), default="run",
+    )
+    cryptoevents_backfill.add_argument(
+        "--pages", type=int, default=2,
+        help="Maximum listing requests in this invocation (1–5)",
+    )
+    cryptoevents_backfill.add_argument("--timeout", type=float, default=20)
+    cryptoevents_backfill.add_argument("--output", type=Path, help="Optional JSON result path")
+
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
     store.add_argument("--action", choices=("status", "list", "history"), default="status")
@@ -233,6 +251,35 @@ def _scrape(args) -> int:
         return 2
 
 
+def _cryptoevents_backfill(args) -> int:
+    from .cryptoevents_backfill import crawl_status, reset_crawl, run_crawl
+
+    try:
+        if args.action == "status":
+            payload = crawl_status(args.db, start_date=args.start_date)
+        elif args.action == "reset":
+            payload = {
+                "checkpoint_reset": reset_crawl(args.db, start_date=args.start_date),
+                "event_rows_preserved": True,
+            }
+        else:
+            payload = run_crawl(
+                args.db,
+                start_date=args.start_date,
+                pages=args.pages,
+                timeout_seconds=args.timeout,
+            ).to_dict()
+        output = json.dumps(payload, ensure_ascii=False, indent=2) + "\\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(output, encoding="utf-8")
+        print(output, end="")
+        return 0
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError, httpx.HTTPError) as exc:
+        print(f"cryptoevents-backfill failed: {exc}", file=sys.stderr)
+        return 2
+
+
 def _store(args) -> int:
     from .storage import event_history, list_events, store_status
 
@@ -338,6 +385,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scrape(args)
     if args.command == "audit":
         return _audit(args)
+    if args.command == "cryptoevents-backfill":
+        return _cryptoevents_backfill(args)
     if args.command == "store":
         return _store(args)
     if args.command == "backfill":
