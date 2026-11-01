@@ -19,6 +19,7 @@ from .coindar_pagination import (
     next_page_url,
     past_search_url,
 )
+from .date_precision import coarse_period
 from .normalization import normalize_events
 from .probe import fetch_page, summarize_page
 from .providers.coindar import CoindarError, parse_listing
@@ -220,6 +221,65 @@ def backfill_undated(
             (first, last, limit),
         ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
+    finally:
+        conn.close()
+
+
+def enrich_undated(
+    database_path: str | Path, *, from_date: str, to_date: str,
+) -> dict[str, int]:
+    """Upgrade legacy quarantined coarse labels using *saved* HTML data only.
+
+    No requests and no writes to the verified date-based events table.
+    Re-running an already enriched window is idempotent.
+    """
+    first, last = _dates(from_date, to_date)
+    conn = _open_db(database_path, create=False)
+    try:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='coindar_backfill_undated'"
+        ).fetchone()
+        if not exists:
+            return {"scanned": 0, "enriched": 0, "month": 0, "quarter": 0, "unknown": 0}
+        rows = conn.execute(
+            "SELECT event_id, payload_json FROM coindar_backfill_undated "
+            "WHERE window_start = ? AND window_end = ? ORDER BY event_id",
+            (first, last),
+        ).fetchall()
+        enriched = month = quarter = unknown = 0
+        with conn:
+            for row in rows:
+                payload = json.loads(row["payload_json"])
+                # A precise event_date must never be silently revised to a
+                # coarse period from the text of a description.
+                if payload.get("event_date") is not None:
+                    unknown += 1
+                    continue
+                precision, key = coarse_period(str(payload.get("date_text") or ""))
+                if precision == "unknown":
+                    unknown += 1
+                    continue
+                if precision == "month":
+                    month += 1
+                else:
+                    quarter += 1
+                desired = dict(payload)
+                desired["date_precision"] = precision
+                desired["period_key"] = key
+                desired["date_role"] = "listed"
+                if desired != payload:
+                    conn.execute(
+                        "UPDATE coindar_backfill_undated SET payload_json = ? "
+                        "WHERE window_start = ? AND window_end = ? AND event_id = ?",
+                        (json.dumps(desired, ensure_ascii=False, sort_keys=True),
+                         first, last, row["event_id"]),
+                    )
+                    enriched += 1
+        return {
+            "scanned": len(rows), "enriched": enriched, "month": month,
+            "quarter": quarter, "unknown": unknown,
+        }
     finally:
         conn.close()
 
