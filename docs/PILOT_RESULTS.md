@@ -58,11 +58,11 @@ uv run crypto-harvester audit --source coindar --input-html ~/Downloads/coindar.
   --output artifacts/coindar-saved.json
 ```
 
-For Coindar this command measures same-host `/en/event/...` candidate links
-and inspects pagination evidence; it **does not yet extract or validate actual
-Coindar events**. A follow-up provider implementation must use a real locally
-accessible HTML fixture to identify event cards, parse field values, and
-validate dates before adding Coindar to the normalized event DB.
+Coindar now has an offline HTML parser that extracts same-host event cards and normalizes
+numeric event IDs, coin/ticker, category, title, description and visible day-group dates.
+A representative fixture tests this structure. The current raw page could not be captured
+from the GitHub runner (403), so a fresh local HTML snapshot must still be audited before
+claiming field-level accuracy or production readiness.
 
 If a live page returns 403/429, the audit records it as a limitation of
 **that environment**. It does not attempt challenge bypass or persistent
@@ -96,7 +96,7 @@ over several dates and review the differences and rate-limiting behavior.
 | --- | --- | --- | --- |
 | ICO Drops | Implemented for section listing pages | Not traversed in this gate | Ended section works, archive completeness unverified |
 | CryptoEvents.global | Implemented for homepage cards | A `Load more` control is visible; not clicked or reverse-engineered | No historic completeness verification |
-| Coindar | Link diagnostics only; local extraction pending | Pagination hints inspected, never followed | Website exposes a past-events interface; actual crawl unverified |
+| Coindar | Implemented for saved/local HTML; live DOM confirmation pending | Page links detected, not followed | Past-events interface visible; archive completeness unverified |
 
 The new GitHub workflow evaluates the **two implemented providers** through
 a single public listing fetch each and attaches JSON evidence. Coindar is
@@ -163,3 +163,40 @@ The existing tests confirm parser/structural behavior, not all those claims.
 Next recommended reviewed PR after this evaluation: add a bounded,
 resume-safe pagination adapter for CryptoEvents.global, or build Coindar
 from an accessible locally captured HTML fixture if one is available.
+
+
+## Gate 8 — Coindar HTML provider
+
+The provider uses the public /en listing HTML, not the token-gated API.
+The public API documentation requires an access token for API 2.0; this pilot
+does not use that API or any paid service. The listing page itself exposes
+event links, coin links, category tags, captions, summaries and date-group
+headings. The parser performs no event-detail requests.
+
+### Local validation
+
+    uv run crypto-harvester probe --url https://www.coindar.org/en \
+      --engine http --save-html .debug/coindar.html
+
+    uv run crypto-harvester audit --source coindar --input-html .debug/coindar.html \
+      --strict --min-records 10 --output artifacts/coindar-audit.json
+
+    uv run crypto-harvester scrape --provider coindar --input-html .debug/coindar.html \
+      --schema unified --db data/harvest.sqlite --output artifacts/coindar.json
+
+The checked-in fixture is representative test HTML, not a raw page snapshot.
+The parser is therefore tested for URL identity, card grouping, deduplication,
+field extraction, exact-day handling, unknown dates, normalization and SQLite
+integration. The live parser must be verified against a fresh local HTML snapshot
+before its selectors/ancestor heuristics are treated as stable.
+
+### Current scope and limits
+
+- One listing page per run; pagination and past-event history are not followed.
+- Numeric event ID in the public event URL is the provider-local stable key.
+- Event dates are date-only from the visible UTC day heading; no time-of-day
+  or timezone-aware instant is fabricated.
+- Location, source reliability and importance are not inferred when absent.
+- A 403/429/challenge page is reported as unavailable; no bypass is attempted.
+- The GitHub runner's Coindar 403 is an environment-specific limitation, not
+  evidence that a user's workstation cannot access the page.

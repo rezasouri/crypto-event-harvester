@@ -1,7 +1,7 @@
 """First-page pilot quality audit, pagination evidence and offline run comparison.
 
-The audit deliberately separates validated provider records from link-only
-Coindar feasibility evidence. It never treats pagination hints as a complete crawl.
+The audit separates normalized provider records from raw link diagnostics.
+It never treats pagination hints as a complete crawl.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 
 from .normalization import normalize_events
 from .probe import PageSnapshot, fetch_page, summarize_page
-from .providers import cryptoevents, icodrops
+from .providers import coindar, cryptoevents, icodrops
 from .source_feasibility import SOURCES, candidate_event_links
 
 SUPPORTED_SOURCES = ("icodrops", "cryptoevents", "coindar")
@@ -99,25 +99,19 @@ def audit_snapshot(source: str, snapshot: PageSnapshot) -> dict:
         report["status"] = "http_error"
         return report
 
-    if source == "coindar":
-        count, samples = candidate_event_links(snapshot.html, spec=spec)
-        report.update(
-            status="candidate_links_only" if count else "needs_review",
-            candidate_detail_link_count=count,
-            candidate_detail_link_samples=samples,
-            coindar_provider_implemented=False,
-            evaluation_level="feasibility_only",
-        )
-        return report
-
+    candidate_count, candidate_samples = candidate_event_links(snapshot.html, spec=spec)
     try:
-        native = (
-            icodrops.parse_listing(snapshot.html, section="upcoming")
-            if source == "icodrops"
-            else cryptoevents.parse_listing(snapshot.html)
-        )
+        if source == "coindar":
+            native = coindar.parse_listing(snapshot.html)
+        elif source == "icodrops":
+            native = icodrops.parse_listing(snapshot.html, section="upcoming")
+        else:
+            native = cryptoevents.parse_listing(snapshot.html)
         records = normalize_events(native)
-    except (icodrops.ICODropsError, cryptoevents.CryptoEventsError, ValueError, TypeError) as exc:
+    except (
+        coindar.CoindarError, icodrops.ICODropsError, cryptoevents.CryptoEventsError,
+        ValueError, TypeError,
+    ) as exc:
         report["status"] = "parser_error"
         report["parser_error"] = f"{type(exc).__name__}: {exc}"
         return report
@@ -134,6 +128,8 @@ def audit_snapshot(source: str, snapshot: PageSnapshot) -> dict:
     report.update(
         status="quality_failure" if wrong_urls else "parsed_listing",
         evaluation_level="structural_fields_only",
+        candidate_detail_link_count=candidate_count,
+        candidate_detail_link_samples=candidate_samples,
         parsed_record_count=len(records),
         unique_event_id_count=len({event.event_id for event in records}),
         explicit_calendar_date_count=precise,

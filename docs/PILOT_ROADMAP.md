@@ -13,7 +13,7 @@ reviewed by the repository owner. Advance to the next stage only after approval/
 | --- | --- | --- |
 | 0 — Foundation | Python package, optional browser engines, reproducible offline CI, one-page probe | Tests and lint pass, CLI probes an accessible page |
 | 1 — Source feasibility | Probe Coindar, ICO Drops, CryptoEvents.global; inspect HTML, DOM, pagination, history | `SOURCE_FEASIBILITY.md` with reproducible URLs, methods, observed limitations, request counts |
-| 2 — Provider pilots | Separate event parsers for sources that pass Gate 1 | Fixtures and successful extraction of available events, with source URLs |
+| 2 — Provider pilots | Independent parsers for ICO Drops, CryptoEvents.global and local Coindar HTML | Offline fixtures, normalized event records, source URLs; live access reported per environment |
 | 3 — Normalization | Common schema, UTC/tz/unknown date precision, source IDs | Validation tests, no fabricated timestamps |
 | 4 — Incremental storage | Dedup, revisions, resume, SQLite + CSV/JSON exports | Idempotence tests and before/after snapshots |
 | 5 — Evaluation | Repeated trials, parser regression fixtures, quality checks | `PILOT_RESULTS.md` and source comparison |
@@ -36,3 +36,14 @@ is required. Never claim an event was successfully scraped until verified from l
 - Keep debug snapshots local; do not commit fetched content or session credentials.
 - Record 403/429/challenge pages as failures; do not add bypass or evasion machinery.
 - Gate 0 intentionally does **not** implement any site-specific scraper or persistent database.
+
+
+## Gate 8 status — Coindar HTML parser
+
+The first Coindar provider implementation is available in
+docs/COINDAR_PILOT.md. It parses one public listing page from saved HTML or
+a normal HTTP/browser fetch, with no API token and no event-detail requests.
+A representative offline fixture and parser/normalization/SQLite tests are
+included. A fresh local snapshot from a workstation where Coindar is accessible
+is still required to confirm the parser against the current raw DOM. Pagination
+and historical backfill are explicitly out of scope for this gate.
