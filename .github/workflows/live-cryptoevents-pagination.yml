@@ -39,7 +39,7 @@ jobs:
           assert len(events) == result["extracted_count"]
           assert len({item["event_id"] for item in events}) == len(events)
           assert all(item["provider"] == "cryptoevents" for item in events)
-          assert all(item["schema_version"] == "1.0" for item in events)
+          assert all(item["schema_version"] == "1.1" for item in events)
           assert all(item["start_at_utc"] is None for item in events)
           assert all(item["source_url"].startswith("https://cryptoevents.global/") for item in events)
           db = store_status("artifacts/harvest.sqlite")
