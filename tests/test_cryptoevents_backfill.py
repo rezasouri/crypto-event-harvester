@@ -227,3 +227,26 @@ def test_invalid_start_date_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(archive, "fetch_listing", lambda **kw: pytest.fail("network"))
     with pytest.raises(ValueError, match="YYYY-MM-DD"):
         archive.run_crawl(tmp_path / "events.sqlite", start_date="2026-11-1")
+
+
+def test_hard_total_page_cap_stops_crawl(tmp_path, monkeypatch):
+    db = tmp_path / "events.sqlite"
+    monkeypatch.setattr(archive, "fetch_listing", lambda **kw: _base_events())
+    calls = []
+
+    def full_page(offset, **kwargs):
+        calls.append(offset)
+        return pagination.parse_ajax_records(_ajax_rows(offset)), 20
+
+    monkeypatch.setattr(archive, "fetch_ajax_page", full_page)
+    archive.run_crawl(db, start_date=START, pages=1)
+    with archive._open_db(db, create=False) as conn:
+        conn.execute(
+            "UPDATE cryptoevents_crawl_runs SET pages_completed = ? "
+            "WHERE start_date_utc = ?", (archive.MAX_TOTAL_PAGES - 1, START),
+        )
+    result = archive.run_crawl(db, start_date=START, pages=1)
+    assert result.state == "complete"
+    assert result.stop_reason == "total_page_limit"
+    assert result.total_pages == archive.MAX_TOTAL_PAGES
+    assert len(calls) == 1

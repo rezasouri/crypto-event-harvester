@@ -269,7 +269,7 @@ def _cryptoevents_backfill(args) -> int:
                 pages=args.pages,
                 timeout_seconds=args.timeout,
             ).to_dict()
-        output = json.dumps(payload, ensure_ascii=False, indent=2) + "\\n"
+        output = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(output, encoding="utf-8")

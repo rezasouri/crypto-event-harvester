@@ -200,3 +200,20 @@ before its selectors/ancestor heuristics are treated as stable.
 - A 403/429/challenge page is reported as unavailable; no bypass is attempted.
 - The GitHub runner's Coindar 403 is an environment-specific limitation, not
   evidence that a user's workstation cannot access the page.
+
+
+## Gate 12 — resumable CryptoEvents collection
+
+The previous Gate 7 implementation performed bounded pagination in one
+process, but did not persist its next AJAX offset. Gate 12 adds a durable
+per-UTC-day cursor. It saves each successfully parsed page to the shared
+SQLite event store before advancing the cursor, resumes directly from the
+next offset without refetching the homepage, and preserves a per-crawl seen
+set for duplicate/stop detection. The per-invocation request cap remains
+five pages, with a hard total cap of 100 pages for one UTC-day crawl.
+A reset deletes only that crawl's cursor and seen IDs; event rows and
+revision history are preserved.
+
+A real local run is still required to verify the current public AJAX response
+and observed page count. GitHub Actions uses offline fixtures for correctness
+and does not substitute for the owner's live workstation evidence.

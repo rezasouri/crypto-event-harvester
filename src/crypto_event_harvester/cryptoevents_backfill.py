@@ -14,6 +14,8 @@ from pathlib import Path
 
 from .normalization import normalize_events
 from .pagination import MAX_PAGES, PAGE_SIZE, fetch_ajax_page
+
+MAX_TOTAL_PAGES = 100
 from .providers.cryptoevents import fetch_listing
 from .storage import _connect, sync_events
 
@@ -201,6 +203,16 @@ def run_crawl(
             if row["state"] == "complete":
                 break
 
+            if row["pages_completed"] >= MAX_TOTAL_PAGES:
+                with conn:
+                    conn.execute(
+                        "UPDATE cryptoevents_crawl_runs SET state = 'complete', "
+                        "stop_reason = 'total_page_limit', updated_at_utc = ? "
+                        "WHERE start_date_utc = ?",
+                        (datetime.now(UTC).isoformat(), day_text),
+                    )
+                break
+
             offset = row["next_offset"]
             if offset == 0:
                 events = fetch_listing(engine="http", timeout_seconds=timeout_seconds)
@@ -244,6 +256,8 @@ def run_crawl(
                     state, stop_reason = "complete", "no_new_ids"
                 elif raw_count < PAGE_SIZE:
                     state, stop_reason = "complete", "partial_page"
+            if state == "active" and row["pages_completed"] + 1 >= MAX_TOTAL_PAGES:
+                state, stop_reason = "complete", "total_page_limit"
 
             now = datetime.now(UTC).isoformat()
             with conn:

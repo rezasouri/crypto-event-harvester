@@ -62,9 +62,9 @@ and markup removed. Only valid same-host event links are accepted.
 - The site's filter defaults to the current UTC day; event ordering/content
   can change between runs or at a calendar boundary.
 - This is **bounded forward pagination**, not complete historical backfill.
-- Persisting to SQLite makes repeated scans idempotent but is **not a
-  durable page cursor or cross-run resume**. Cursor persistence can be added
-  as a separate reviewed gate when needed.
+- Persisting to SQLite makes repeated scans idempotent. Cross-run resume is provided by the separate
+  `cryptoevents-backfill` command and its frozen UTC-day checkpoint; see
+  [Gate 12 — checkpointed pagination](CRYPTOEVENTS_BACKFILL.md).
 - Only the CryptoEvents.global provider is paginated here; Coindar remains
   a separate locally accessible source to investigate with captured HTML,
   and ICO Drops uses its own Upcoming/Active/Ended listing sections.

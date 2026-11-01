@@ -269,3 +269,33 @@ uv run crypto-harvester backfill --db data/harvest.sqlite \
 
 See [Unified Schema](docs/UNIFIED_SCHEMA.md) and
 [Coindar backfill](docs/COINDAR_BACKFILL.md).
+
+
+## Gate 12: checkpointed CryptoEvents.global pagination
+
+The ordinary `scrape --pages` command remains a bounded one-shot scan. For
+cross-run continuation, use the separate checkpointed command:
+
+```bash
+# Start a crawl for a fixed UTC day; fetch at most two listing pages this run.
+uv run crypto-harvester cryptoevents-backfill --db data/harvest.sqlite \
+  --start-date 2026-11-01 --pages 2
+
+# Resume from the saved offset; the homepage is not fetched again.
+uv run crypto-harvester cryptoevents-backfill --db data/harvest.sqlite \
+  --start-date 2026-11-01 --pages 2
+
+# Inspect or reset only this day's checkpoint (event rows/revisions are preserved).
+uv run crypto-harvester cryptoevents-backfill --db data/harvest.sqlite \
+  --start-date 2026-11-01 --action status
+uv run crypto-harvester cryptoevents-backfill --db data/harvest.sqlite \
+  --start-date 2026-11-01 --action reset
+```
+
+The UTC start-day filter is frozen in SQLite and must be supplied consistently
+when resuming. Each invocation makes at most five listing requests; a crawl
+has a hard cap of 100 pages. Each page is synchronized to the shared event
+store before the cursor advances, so a crash can repeat at most the last
+page and idempotent storage prevents duplicate revisions. No event-detail
+pages, paid APIs, retries or unbounded requests are used. See
+[checkpointed CryptoEvents pagination](docs/CRYPTOEVENTS_BACKFILL.md).
