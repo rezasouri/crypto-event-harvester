@@ -165,3 +165,22 @@ The audit reports parsed-record quality, optional pagination signals,
 normalization/URL checks and offline first-page comparisons. Coindar link
 evidence is **not** mislabeled as parsed event records. See the
 [pilot evaluation report](docs/PILOT_RESULTS.md) for methodology and limits.
+
+
+## Gate 7: bounded multi-page CryptoEvents collection
+
+```bash
+# First page (default, backwards-compatible)
+crypto-harvester scrape --provider cryptoevents --schema unified
+
+# First page + two additional public listing batches, at most three requests
+crypto-harvester scrape --provider cryptoevents --pages 3 \
+  --schema unified --db data/harvest.sqlite \
+  --output artifacts/cryptoevents.json
+```
+
+The first page uses normal HTTP; each optional extra page uses the site's
+public Load-more POST. Deduplication and early stops keep fetches bounded.
+The cap is five pages, with no automatic retries or paid APIs.
+See [pagination implementation and limits](docs/CRYPTOEVENTS_PAGINATION.md).
+Coindar remains on the roadmap for a local-HTML-backed parser.

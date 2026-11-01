@@ -47,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
     scrape.add_argument("--limit", type=int, default=None, help="Limit exported rows; not fetch count")
     scrape.add_argument("--min-events", type=int, default=0, help="Fail if fewer events were extracted")
     scrape.add_argument("--db", type=Path, help="Incrementally persist normalized events in SQLite")
+    scrape.add_argument(
+        "--pages", type=int, default=1,
+        help="CryptoEvents only: listing page plus up to 4 additional HTTP batches",
+    )
 
     audit = subcommands.add_parser("audit", help="First-page quality and coverage evidence")
     audit.add_argument("--source", choices=("icodrops", "cryptoevents", "coindar"), required=True)
@@ -69,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _scrape(args) -> int:
+    from . import pagination
     from .normalization import SCHEMA_VERSION, UnifiedEvent, normalize_events
     from .providers import cryptoevents, icodrops
     from .storage import sync_events
@@ -85,6 +90,15 @@ def _scrape(args) -> int:
     if args.min_events < 0:
         print("--min-events cannot be negative", file=sys.stderr)
         return 2
+    if not 1 <= args.pages <= pagination.MAX_PAGES:
+        print(f"--pages must be between 1 and {pagination.MAX_PAGES}", file=sys.stderr)
+        return 2
+    if args.pages > 1 and args.provider != "cryptoevents":
+        print("--pages > 1 is supported only for cryptoevents", file=sys.stderr)
+        return 2
+    if args.pages > 1 and (args.input_html or args.engine != "http"):
+        print("--pages > 1 requires a live HTTP source, not --input-html or a browser", file=sys.stderr)
+        return 2
 
     sections = ("upcoming", "active", "ended") if args.section == "all" else (args.section,)
     event_type = cryptoevents.CryptoEventsEvent if args.provider == "cryptoevents" else icodrops.ICODropsEvent
@@ -92,11 +106,27 @@ def _scrape(args) -> int:
         unique = {}
         for section in sections:
             if args.provider == "cryptoevents":
-                events = (
-                    cryptoevents.parse_listing(args.input_html.read_text(encoding="utf-8"))
-                    if args.input_html
-                    else cryptoevents.fetch_listing(engine=args.engine, timeout_seconds=args.timeout)
-                )
+                if args.input_html:
+                    events = cryptoevents.parse_listing(args.input_html.read_text(encoding="utf-8"))
+                elif args.pages > 1:
+                    page_result = pagination.fetch_paginated_listing(
+                        max_pages=args.pages, engine=args.engine, timeout_seconds=args.timeout
+                    )
+                    events = page_result.events
+                    print(
+                        json.dumps({
+                            "pagination": {
+                                "pages_fetched": page_result.pages_fetched,
+                                "ajax_requests": page_result.ajax_requests,
+                                "stop_reason": page_result.stop_reason,
+                            }
+                        }),
+                        file=sys.stderr,
+                    )
+                else:
+                    events = cryptoevents.fetch_listing(
+                        engine=args.engine, timeout_seconds=args.timeout
+                    )
             else:
                 events = (
                     icodrops.parse_listing(args.input_html.read_text(encoding="utf-8"), section=section)
