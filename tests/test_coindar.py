@@ -85,6 +85,9 @@ def test_navigation_and_foreign_event_links_are_not_emitted():
     ids = {event.event_id for event in _events()}
     assert "coindar:999999" not in ids
     assert "coindar:155005" not in ids
+    # Valid event URLs in overview teaser rails are not full calendar cards.
+    assert "coindar:160001" not in ids
+    assert "coindar:160002" not in ids
 
 
 @pytest.mark.parametrize("html,message", [
@@ -122,3 +125,10 @@ def test_live_fetch_reports_http_403_without_retry_or_bypass(monkeypatch):
     with pytest.raises(CoindarError, match="unavailable"):
         fetch_listing()
     assert calls == [LISTING_URL]
+
+
+def test_page_overview_teasers_do_not_change_listing_count_or_quality():
+    events = _events()
+    assert len(events) == 4
+    assert sum(event.date_precision == "day" for event in events) == 3
+    assert all(event.category is not None for event in events)

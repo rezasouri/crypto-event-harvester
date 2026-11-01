@@ -254,6 +254,11 @@ def parse_listing(html: str) -> list[CoindarEvent]:
             container, title=title, coin=coin, category=category,
             date_text=date_text, added_text=added_text,
         )
+        # The homepage also embeds small Recently Added / Trending teaser cards.
+        # They link to real events but do not carry the calendar card's category
+        # or description. Keep them as link-discovery hints, not parsed events.
+        if category is None and description is None:
+            continue
         event = CoindarEvent(
             event_id=f"coindar:{source_id}",
             source="coindar",

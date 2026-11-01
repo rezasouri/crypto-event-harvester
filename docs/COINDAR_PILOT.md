@@ -81,3 +81,21 @@ Before merging for production use, capture a fresh local HTML page and run
 the commands above. If its DOM differs, retain that snapshot privately and
 adjust the parser selectors/ancestor logic from the observed markup. Do not
 commit session data, cookies or challenge tokens.
+
+
+## Workstation audit finding — 2026-11-01
+
+The first successful local snapshot contained **24 same-host event links**,
+but four belonged to short *Recently Added / Trending Events* preview cards.
+Those four previews had no event day, category or description. The initial
+parser included them as partial records, although the main calendar contained
+20 full event cards (all with explicit day and description). The parser now
+excludes overview-only teaser cards when **both** category and description
+are absent, while keeping legitimate dated and month/quarter calendar cards.
+The fixture exercises this distinction with two representative teaser links.
+
+Run the audit again using the **same saved HTML** to check that only
+full calendar rows are reported. Candidate detail-link counts may still
+include teasers, because raw discovery and structured event extraction are
+separate measurements. The expected structurally parsed count from that
+snapshot is 20, pending local revalidation.
