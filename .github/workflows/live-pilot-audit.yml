@@ -1,0 +1,75 @@
+name: Pilot quality and coverage audit (nonblocking)
+
+on:
+  pull_request:
+    paths:
+      - 'src/crypto_event_harvester/pilot_evaluation.py'
+      - 'src/crypto_event_harvester/cli.py'
+      - 'tests/test_pilot_evaluation.py'
+      - '.github/workflows/live-pilot-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: python -m pip install -e .
+      - name: Evaluate two live listing snapshots with only two GETs
+        run: |
+          crypto-harvester audit --source icodrops --engine http \
+            --min-records 20 --strict --output artifacts/audit-icodrops.json
+          crypto-harvester audit --source cryptoevents --engine http \
+            --min-records 10 --strict --output artifacts/audit-cryptoevents.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          results = {}
+          for path in sorted(Path("artifacts").glob("audit-*.json")):
+              audit = json.loads(path.read_text(encoding="utf-8"))
+              source = audit["source"]
+              assert audit["status"] == "parsed_listing"
+              assert audit["parsed_record_count"] == audit["unique_event_id_count"]
+              assert audit["parsed_record_count"] == len(audit["event_fingerprints"])
+              assert audit["explicit_calendar_date_count"] + audit["unknown_or_quarter_date_count"] == audit["parsed_record_count"]
+              assert not audit["invalid_source_url_event_ids"]
+              assert audit["listing_fetch_attempts"] == 1
+              assert audit["pagination"]["pagination_followed"] is False
+              assert audit["records_are_manually_verified"] is False
+              results[source] = {
+                  "parsed_record_count": audit["parsed_record_count"],
+                  "explicit_calendar_date_count": audit["explicit_calendar_date_count"],
+                  "unknown_or_quarter_date_count": audit["unknown_or_quarter_date_count"],
+                  "html_bytes": audit["html_bytes"],
+                  "pagination": audit["pagination"],
+                  "evaluation_level": audit["evaluation_level"],
+              }
+          assert set(results) == {"icodrops", "cryptoevents"}
+          summary = {
+              "run_type": "live_http_first_page_only",
+              "total_listing_fetch_attempts": 2,
+              "paid_api_calls": 0,
+              "coindar_local_probe_status": "not_run_in_github_actions",
+              "sources": results,
+          }
+          Path("artifacts/pilot-quality-summary.json").write_text(
+              json.dumps(summary, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Upload verifiable quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilot-quality-audit
+          path: artifacts/*.json
+          if-no-files-found: warn

@@ -1,8 +1,9 @@
 # Crypto Event Harvester
 
 A **zero-paid-API, provider-independent** research pilot for scraping cryptocurrency event calendars.
-It aims to make event extraction measurable before committing to a production architecture.
-The first stage includes a one-page diagnostic probe; it **does not** claim to scrape crypto events yet.
+Two implemented event providers (ICO Drops and CryptoEvents.global) support native/unified
+JSON/CSV exports and incremental SQLite version history. Coindar remains a feasibility
+candidate for normal workstation/browser access, not yet a normalized provider.
 
 ## Pilot workflow
 
@@ -143,3 +144,24 @@ adds an immutable revision and older observations never overwrite newer ones.
 Missing records are never deleted based on a short listing fetch. See
 [SQLite incremental storage](docs/SQLITE_STORAGE.md). Coindar is still on
 the shortlist for local/browser feasibility tests.
+
+
+## Gate 6: first-page pilot evaluation and Coindar local diagnosis
+
+```bash
+crypto-harvester audit --source icodrops --min-records 20 --strict \
+  --output artifacts/audit-icodrops.json
+crypto-harvester audit --source cryptoevents --min-records 10 --strict \
+  --output artifacts/audit-cryptoevents.json
+
+# On a workstation where Coindar is accessible:
+crypto-harvester audit --source coindar --engine http \
+  --output artifacts/coindar-http.json
+crypto-harvester audit --source coindar \
+  --input-html ~/Downloads/coindar.html --output artifacts/coindar-offline.json
+```
+
+The audit reports parsed-record quality, optional pagination signals,
+normalization/URL checks and offline first-page comparisons. Coindar link
+evidence is **not** mislabeled as parsed event records. See the
+[pilot evaluation report](docs/PILOT_RESULTS.md) for methodology and limits.

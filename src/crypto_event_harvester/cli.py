@@ -48,6 +48,17 @@ def build_parser() -> argparse.ArgumentParser:
     scrape.add_argument("--min-events", type=int, default=0, help="Fail if fewer events were extracted")
     scrape.add_argument("--db", type=Path, help="Incrementally persist normalized events in SQLite")
 
+    audit = subcommands.add_parser("audit", help="First-page quality and coverage evidence")
+    audit.add_argument("--source", choices=("icodrops", "cryptoevents", "coindar"), required=True)
+    audit.add_argument("--engine", choices=("http", "playwright", "selenium"), default="http")
+    audit.add_argument("--timeout", type=float, default=20)
+    audit.add_argument("--input-html", type=Path, help="Use a saved HTML page with no requests")
+    audit.add_argument("--save-html", type=Path, help="Save a local snapshot (not committed)")
+    audit.add_argument("--output", type=Path, help="Write the full JSON audit report")
+    audit.add_argument("--compare-to", type=Path, help="Compare against an earlier JSON report offline")
+    audit.add_argument("--min-records", type=int, default=0)
+    audit.add_argument("--strict", action="store_true", help="Return nonzero on insufficient evidence")
+
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
     store.add_argument("--action", choices=("status", "list", "history"), default="status")
@@ -157,10 +168,48 @@ def _store(args) -> int:
         return 2
 
 
+def _audit(args) -> int:
+    from .pilot_evaluation import audit_source, compare_audits
+
+    if args.min_records < 0:
+        print("--min-records cannot be negative", file=sys.stderr)
+        return 2
+    try:
+        report = audit_source(
+            args.source, engine=args.engine, timeout_seconds=args.timeout,
+            input_html=args.input_html, save_html=args.save_html,
+        )
+        if args.compare_to:
+            previous = json.loads(args.compare_to.read_text(encoding="utf-8"))
+            report["comparison"] = compare_audits(previous, report)
+        rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+            print(json.dumps({"output": str(args.output), "status": report["status"]}))
+        else:
+            print(rendered, end="")
+        if not args.strict:
+            return 0
+        if args.source == "coindar":
+            # Coindar reports link evidence, never claims validated event records.
+            valid = report["status"] == "candidate_links_only"
+            count = report.get("candidate_detail_link_count", 0)
+        else:
+            valid = report["status"] == "parsed_listing"
+            count = report.get("parsed_record_count", 0)
+        return 0 if valid and count >= args.min_records else 1
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        print(f"audit failed: {exc}", file=sys.stderr)
+        return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "scrape":
         return _scrape(args)
+    if args.command == "audit":
+        return _audit(args)
     if args.command == "store":
         return _store(args)
     if args.command == "sources":
