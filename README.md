@@ -248,3 +248,24 @@ uv run crypto-harvester backfill --db data/harvest.sqlite \
 See [Coindar historical checkpoints](docs/COINDAR_BACKFILL.md). The upper
 date bound is a local filter, **not** a verified upstream server-side range.
 Unknown dates are not invented or included in a historical window.
+
+
+## Coindar month and quarter precision (Gate 11)
+
+Coindar month-only records (for example `October 2026`) now retain
+`date_precision=month` and `period_key=2026-10`; quarter-only labels
+retain `quarter` and `YYYY-QN`. The Unified Schema is version 1.1, and
+no exact day, UTC timestamp or timezone is fabricated.
+
+You can update previously cached month-only records **without any web
+requests** and inspect them locally:
+
+```bash
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action enrich
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action undated --limit 20
+```
+
+See [Unified Schema](docs/UNIFIED_SCHEMA.md) and
+[Coindar backfill](docs/COINDAR_BACKFILL.md).

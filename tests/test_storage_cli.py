@@ -40,7 +40,7 @@ def test_native_export_can_sync_unified_db(tmp_path, capsys):
     rows = json.loads(capsys.readouterr().out)
     assert len(rows) == 1
     assert rows[0]["event"]["start_date"] == "2026-09-29"
-    assert rows[0]["event"]["schema_version"] == "1.0"
+    assert rows[0]["event"]["schema_version"] == "1.1"
 
 
 def test_cli_history_and_missing_db_errors(tmp_path, capsys):

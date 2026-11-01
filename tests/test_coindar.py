@@ -56,8 +56,9 @@ def test_unknown_quarter_heading_is_not_promoted_to_a_day():
     assert event.event_id == "coindar:155004"
     assert event.date_text == "Q1 2027"
     assert event.event_date is None
-    assert event.date_precision == "unknown"
-    assert event.date_role == "unknown"
+    assert event.date_precision == "quarter"
+    assert event.date_role == "listed"
+    assert event.period_key == "2027-Q1"
 
 
 @pytest.mark.parametrize("url", [

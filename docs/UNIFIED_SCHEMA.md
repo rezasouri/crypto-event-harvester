@@ -29,7 +29,7 @@ Unsupported provider types and duplicated normalized IDs fail explicitly.
 
 | Field | Meaning |
 | --- | --- |
-| `schema_version` | `1.0`, version of the output contract |
+| `schema_version` | `1.1` for newly normalized events; old persisted `1.0` records remain readable |
 | `event_id` | Stable within the provider's current native ID scheme, prefixed by provider |
 | `provider`, `source_event_id` | Provenance and provider-local identity |
 | `source_url`, `listing_url` | Original event page and listing page URLs |
@@ -39,8 +39,9 @@ Unsupported provider types and duplicated normalized IDs fail explicitly.
 | `location`, `description` | Conference fields when present |
 | `date_text` | Verbatim human-readable date/status shown by source |
 | `start_date`, `end_date` | Explicit ISO `YYYY-MM-DD` calendar dates or null |
-| `date_precision` | `day`, `range`, `quarter` or `unknown` |
+| `date_precision` | `day`, `range`, `month`, `quarter` or `unknown` |
 | `date_role` | `listed`, `start` or `unknown` |
+| `period_key` | Canonical `YYYY-MM` or `YYYY-QN` for explicit month/quarter only; otherwise null |
 | `timezone`, `start_at_utc`, `end_at_utc` | **Null**, because neither source supplies verified instants and offsets |
 | `total_raised`, `pre_valuation` | Original displayed values, left as text; no currency assumptions |
 | `featured` | Whether conference was a featured card; null for ICO Drops |
@@ -57,8 +58,11 @@ CryptoEvents.global maps actual start/end date ranges, location and
 description. Its status listed means only that it is present on the source
 calendar; it does not claim that the event has started or ended.
 
-Coindar maps the coin name to project, the ticker and category directly,
-and the visible day-group date to a date-only start_date=end_date. The
+Coindar maps the coin name to project, the ticker and category directly.
+An explicit day-group date becomes date-only start_date=end_date; a month
+heading such as `October 2026` becomes `date_precision=month` and
+`period_key=2026-10` with null start_date/end_date; a `Q1 2027`
+heading becomes `quarter` and `2027-Q1`, also with null exact dates. The
 listing page does not establish a time-of-day or a timezone-aware instant;
 both UTC timestamp fields and the timezone remain null. Relative added_text
 is retained only in the native provider record, not used as an event date.
@@ -89,3 +93,22 @@ Run `pytest -q` and `ruff check .`. The live unified export workflow
 provider, checks shared field layouts and calendar date semantics, then publishes
 the resulting two JSON files as a workflow artifact. All live counts are
 observations, not historical-completeness claims.
+
+
+## Schema 1.1 compatibility and stored data
+
+Schema 1.1 adds a structured `period_key` field and `month` to the date
+precision enum. All new normalized output is schema 1.1; unchanged legacy
+JSON data already persisted as schema 1.0 remains readable and history is
+**not rewritten by a database migration**. When a source event is observed
+again, the versioned SQLite event store may append one new revision reflecting
+the newer normalized contract. Subsequent identical observations are
+idempotent. Explicit month/quarter values are not converted into a first day,
+last day, UTC midnight or timezone-aware instant. Existing `start_date` and
+`end_date` remain null for coarse periods.
+
+The saved Coindar undated cache can be enriched entirely offline with
+`crypto-harvester backfill --action enrich`; it updates only the cached native
+payload's `date_precision`, `date_role` and `period_key`, never the
+validated event table and never a page cursor. Records with unrecognized
+labels stay `unknown` and keep their exact source text.

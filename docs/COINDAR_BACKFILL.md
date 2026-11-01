@@ -171,3 +171,25 @@ The `undated` field in a run describes observed unknown-date records;
 A one-time explicit checkpoint reset is necessary to recover raw
 metadata from already-skipped pages. **This intentionally costs at most
 the bounded re-scan request budget, not unlimited retries.**
+
+
+## Gate 11 — explicit month/quarter precision (no refetch)
+
+Previously cached coarse Coindar entries need not be fetched from the site
+again. The new offline command interprets only a whole explicit calendar
+label such as `October 2026` or `Q1 2027`, retaining the original text:
+
+```bash
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action enrich
+uv run crypto-harvester backfill --db data/harvest.sqlite \
+  --from-date 2026-10-01 --to-date 2026-11-01 --action undated --limit 20
+```
+
+The first action performs **zero HTTP requests** and is idempotent.
+It annotates retained native records with `date_precision=month` and
+`period_key=2026-10` (or `quarter` and `YYYY-QN`), without inventing a day.
+These are still intentionally excluded from exact-day backfill window
+membership and from the verified date-row table. Checkpoints and old event
+revisions remain untouched; **do not reset** the existing checkpoint just
+to enrich cached metadata.

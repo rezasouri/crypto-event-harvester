@@ -99,3 +99,11 @@ full calendar rows are reported. Candidate detail-link counts may still
 include teasers, because raw discovery and structured event extraction are
 separate measurements. The expected structurally parsed count from that
 snapshot is 20, pending local revalidation.
+
+
+### Coarse date precision extension
+
+Native Coindar records now distinguish an explicit month heading from a
+quarter heading with `date_precision=month|quarter` and a canonical
+`period_key`. The event_date remains null if the website did not display
+an exact calendar day; `added_text` is never used to guess an event date.

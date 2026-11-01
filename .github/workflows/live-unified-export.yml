@@ -34,7 +34,7 @@ jobs:
           reports = {}
           for path in sorted(Path("artifacts").glob("*-unified.json")):
               doc = json.loads(path.read_text(encoding="utf-8"))
-              assert doc["schema"] == "unified" and doc["schema_version"] == "1.0"
+              assert doc["schema"] == "unified" and doc["schema_version"] == "1.1"
               rows = doc["events"]
               assert rows and len(rows) == doc["extracted_count"]
               assert len({row["event_id"] for row in rows}) == len(rows)
@@ -43,7 +43,11 @@ jobs:
                   assert row["end_at_utc"] is None
                   assert row["timezone"] is None
                   assert row["event_id"].startswith(f'{row["provider"]}:')
-                  if row["date_precision"] in {"unknown", "quarter"}:
+                  if row["date_precision"] in {"unknown", "month", "quarter"}:
+                      if row["date_precision"] in {"month", "quarter"}:
+                          assert row["period_key"] is not None
+                      else:
+                          assert row["period_key"] is None
                       assert row["start_date"] is None and row["end_date"] is None
                   else:
                       assert row["start_date"] is not None and row["end_date"] is not None

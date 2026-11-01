@@ -12,6 +12,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup, Tag
 
+from ..date_precision import coarse_period
 from ..probe import fetch_page, summarize_page
 
 BASE_URL = "https://www.coindar.org"
@@ -55,6 +56,7 @@ class CoindarEvent:
     date_precision: str
     date_role: str
     added_text: str | None
+    period_key: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -160,8 +162,8 @@ def _date_for_event(anchor: Tag, container: Tag) -> tuple[str | None, str, str]:
             if parsed:
                 return parsed, label, precision
         if COARSE_DATE_LABEL.fullmatch(value):
-            # A nearer month/quarter heading must not inherit the prior day's date.
-            return None, value, "unknown"
+            precision, _key = coarse_period(value)
+            return None, value, precision
     return None, "Unknown", "unknown"
 
 
@@ -272,8 +274,10 @@ def parse_listing(html: str) -> list[CoindarEvent]:
             date_text=date_text,
             event_date=event_date,
             date_precision=precision,
-            date_role="listed" if event_date else "unknown",
+            date_role="listed" if precision != "unknown" else "unknown",
             added_text=added_text,
+            period_key=coarse_period(date_text)[1]
+            if precision in {"month", "quarter"} else None,
         )
         previous = records.get(event.event_id)
         if previous is None or _quality(event) > _quality(previous):
