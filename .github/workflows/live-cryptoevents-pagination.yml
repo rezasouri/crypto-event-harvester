@@ -1,9 +1,10 @@
-name: CryptoEvents bounded pagination (nonblocking)
+name: CryptoEvents checkpointed pagination (nonblocking)
 
 on:
   pull_request:
     paths:
       - 'src/crypto_event_harvester/pagination.py'
+      - 'src/crypto_event_harvester/cryptoevents_backfill.py'
       - 'src/crypto_event_harvester/cli.py'
       - '.github/workflows/live-cryptoevents-pagination.yml'
   workflow_dispatch:
@@ -22,33 +23,43 @@ jobs:
           python-version: '3.11'
       - name: Install package
         run: python -m pip install -e .
-      - name: Fetch one homepage plus one public pagination page
+      - name: Run initial bounded crawl and resume from saved offset
         run: |
-          crypto-harvester scrape --provider cryptoevents --pages 2 \
-            --schema unified --min-events 30 --db artifacts/harvest.sqlite \
-            --output artifacts/cryptoevents-paginated.json
+          START_DAY="$(date -u +%F)"
+          crypto-harvester cryptoevents-backfill --db artifacts/harvest.sqlite \
+            --start-date "$START_DAY" --pages 2 --output artifacts/crawl-first.json
+          crypto-harvester cryptoevents-backfill --db artifacts/harvest.sqlite \
+            --start-date "$START_DAY" --pages 2 --output artifacts/crawl-resume.json
           python - <<'PY'
           import json
           from pathlib import Path
-          from crypto_event_harvester.storage import store_status
+          from crypto_event_harvester.storage import list_events, store_status
 
-          path = Path("artifacts/cryptoevents-paginated.json")
-          result = json.loads(path.read_text(encoding="utf-8"))
-          events = result["events"]
+          first = json.loads(Path("artifacts/crawl-first.json").read_text(encoding="utf-8"))
+          resumed = json.loads(Path("artifacts/crawl-resume.json").read_text(encoding="utf-8"))
+          rows = list_events("artifacts/harvest.sqlite", provider="cryptoevents", limit=1000)
+          events = [row["event"] for row in rows]
+
+          assert first["requests"]["homepage_gets"] == 1
+          assert first["requests"]["total"] <= 2
+          assert resumed["requests"]["homepage_gets"] == 0
+          assert resumed["requests"]["total"] <= 2
           assert len(events) >= 30
-          assert len(events) == result["extracted_count"]
           assert len({item["event_id"] for item in events}) == len(events)
           assert all(item["provider"] == "cryptoevents" for item in events)
           assert all(item["schema_version"] == "1.1" for item in events)
           assert all(item["start_at_utc"] is None for item in events)
           assert all(item["source_url"].startswith("https://cryptoevents.global/") for item in events)
+
           db = store_status("artifacts/harvest.sqlite")
           assert db["events"] == len(events)
           summary = {
               "source": "cryptoevents",
-              "max_pages": 2,
-              "planned_listing_gets": 1,
-              "planned_ajax_posts": 1,
+              "first_run_requests": first["requests"],
+              "resume_run_requests": resumed["requests"],
+              "first_run_pages": first["pages_this_run"],
+              "resume_run_pages": resumed["pages_this_run"],
+              "total_pages": resumed["total_pages"],
               "unique_events": len(events),
               "explicit_date_events": sum(item["start_date"] is not None for item in events),
               "db_events": db["events"],
@@ -59,13 +70,14 @@ jobs:
           )
           print(json.dumps(summary, indent=2))
           PY
-      - name: Upload pagination proof
+      - name: Upload checkpointed pagination proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cryptoevents-bounded-pages
+          name: cryptoevents-checkpointed-pages
           path: |
-            artifacts/cryptoevents-paginated.json
+            artifacts/crawl-first.json
+            artifacts/crawl-resume.json
             artifacts/pagination-report.json
             artifacts/harvest.sqlite
           if-no-files-found: warn
