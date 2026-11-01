@@ -103,6 +103,13 @@ def build_parser() -> argparse.ArgumentParser:
     cryptoevents_backfill.add_argument("--timeout", type=float, default=20)
     cryptoevents_backfill.add_argument("--output", type=Path, help="Optional JSON result path")
 
+    candidates = subcommands.add_parser(
+        "candidates", help="Offline cross-provider duplicate candidates for human review"
+    )
+    candidates.add_argument("--db", required=True, type=Path)
+    candidates.add_argument("--limit", type=int, default=100, help="Max returned pairs (1–1000)")
+    candidates.add_argument("--output", type=Path, help="Optional JSON report path")
+
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
     store.add_argument("--action", choices=("status", "list", "history"), default="status")
@@ -280,6 +287,28 @@ def _cryptoevents_backfill(args) -> int:
         return 2
 
 
+def _candidates(args) -> int:
+    from .cross_provider_candidates import match_candidates
+
+    try:
+        report = match_candidates(args.db, limit=args.limit).to_dict()
+        output = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(output, encoding="utf-8")
+            print(json.dumps({
+                "output": str(args.output),
+                "candidates_total": report["candidates_total"],
+                "returned": report["returned"],
+            }, ensure_ascii=False))
+        else:
+            print(output, end="")
+        return 0
+    except (OSError, ValueError, RuntimeError, sqlite3.DatabaseError) as exc:
+        print(f"candidates failed: {exc}", file=sys.stderr)
+        return 2
+
+
 def _store(args) -> int:
     from .storage import event_history, list_events, store_status
 
@@ -387,6 +416,8 @@ def main(argv: list[str] | None = None) -> int:
         return _audit(args)
     if args.command == "cryptoevents-backfill":
         return _cryptoevents_backfill(args)
+    if args.command == "candidates":
+        return _candidates(args)
     if args.command == "store":
         return _store(args)
     if args.command == "backfill":
