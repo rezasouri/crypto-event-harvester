@@ -26,7 +26,7 @@ def test_cli_unified_json_export(tmp_path, provider, filename, expected_type, ex
     ]) == 0
     payload = json.loads(dest.read_text(encoding="utf-8"))
     assert payload["schema"] == "unified"
-    assert payload["schema_version"] == "1.0"
+    assert payload["schema_version"] == "1.1"
     assert payload["extracted_count"] == len(payload["events"])
     first = payload["events"][0]
     assert first["event_type"] == expected_type
