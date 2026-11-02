@@ -126,6 +126,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--action",
         choices=(
             "status", "pending", "list", "history", "membership-history", "evaluate",
+            "review-export", "review-import",
             "accept", "reject", "unlink", "split",
         ),
         required=True,
@@ -141,6 +142,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reconcile.add_argument("--note")
     reconcile.add_argument("--limit", type=int, default=100)
+    reconcile.add_argument(
+        "--input",
+        type=Path,
+        help="CSV review batch to validate or import (review-import)",
+    )
+    reconcile.add_argument(
+        "--output",
+        type=Path,
+        help="CSV path for the human review batch (review-export)",
+    )
+    reconcile.add_argument(
+        "--apply",
+        action="store_true",
+        help="Persist review-import decisions; without this flag import is a dry-run",
+    )
     reconcile.add_argument(
         "--thresholds",
         nargs="+",
@@ -384,6 +400,7 @@ def _store(args) -> int:
 
 def _reconcile(args) -> int:
     from .matching_evaluation import evaluate_reconciliation
+    from .review_dataset import export_review_dataset, import_review_dataset
     from .reconciliation import (
         canonical_list,
         decision_history,
@@ -421,6 +438,24 @@ def _reconcile(args) -> int:
                 thresholds=args.thresholds,
                 min_reviewed_pairs=args.min_reviewed_pairs,
             )
+        elif args.action == "review-export":
+            if not args.output:
+                raise ValueError("review-export requires --output")
+            if args.apply or args.input:
+                raise ValueError("review-export does not accept --apply or --input")
+            result = export_review_dataset(
+                args.db,
+                args.output,
+                strategy=args.strategy or "similarity",
+                min_score=args.min_score,
+                limit=args.limit,
+            )
+        elif args.action == "review-import":
+            if not args.input:
+                raise ValueError("review-import requires --input")
+            if args.output or args.strategy:
+                raise ValueError("review-import accepts --input and optional --apply only")
+            result = import_review_dataset(args.db, args.input, apply=args.apply)
         elif args.action == "membership-history":
             result = membership_history(
                 args.db,
