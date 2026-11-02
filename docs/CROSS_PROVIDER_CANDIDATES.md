@@ -146,12 +146,23 @@ Accept and reject re-read both current snapshots, recalculate the selected
 strategy's evidence, capture current revision numbers and write in one
 immediate SQLite transaction. Old exported reports alone cannot authorize a
 decision. Repeated identical decisions for the same pair, revisions,
-strategy and outcome are idempotent. A later source revision becomes pending
-again. Reject writes only an audit entry. Accept creates an identity, adds a
-member, or extends one existing identity. If both events are already in
-different identities, or adding an event would duplicate a provider in an
-identity, the transaction fails with an explicit conflict; identities are
-never automatically merged. All decision evidence is retained for history.
+strategy and outcome are idempotent. Opposite outcomes for the same event
+pair and revision pair are conflicts, even when the requested matching
+strategy differs. A later source revision can be reviewed again if the pair
+remains eligible. Re-accepting it refreshes each membership's
+`source_revision_at_link` to the reviewed revision without creating a
+duplicate membership.
+
+Pending candidates omit pairs already represented by the same canonical
+identity while both members' linked revisions are current. If either source
+event gains a revision, the pair can reappear for review. The canonical
+`list` action reports both `source_revision_at_link` and `current_revision`,
+plus `membership_stale`; `status` reports the number of stale memberships.
+A rejected decision remains audit-only and does not detach an existing
+canonical membership. If both events are already in different identities,
+or adding an event would duplicate a provider in an identity, the transaction
+fails with an explicit conflict; identities are never automatically merged.
+All decision evidence is retained for history.
 
 Reconciliation never rewrites or deletes source events or revisions and does
 not create synthetic merged source events. The canonical layer contains no

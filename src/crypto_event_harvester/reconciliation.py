@@ -96,6 +96,19 @@ def reconcile_pair(
                 left, right, lrev, rrev = right, left, rrev, lrev
             evidence = _match(left, right, strategy, min_score)
             pair = (left["event_id"], right["event_id"], lrev, rrev, decision, strategy)
+            opposite = conn.execute(
+                "SELECT * FROM reconciliation_decisions WHERE left_event_id=? AND "
+                "right_event_id=? AND left_revision=? AND right_revision=? AND decision<>? "
+                "ORDER BY decided_at_utc, decision_id LIMIT 1",
+                (left["event_id"], right["event_id"], lrev, rrev, decision),
+            ).fetchone()
+            if opposite is not None:
+                raise ValueError(
+                    "conflict: opposite decision already exists for this event pair and "
+                    "source revisions "
+                    f"({opposite['decision']} via {opposite['strategy']})"
+                )
+
             old = conn.execute(
                 "SELECT * FROM reconciliation_decisions WHERE left_event_id=? AND "
                 "right_event_id=? AND left_revision=? AND right_revision=? AND decision=? "
@@ -132,7 +145,7 @@ def reconcile_pair(
                 now = _now()
                 if not lm and not rm:
                     conn.execute("INSERT INTO canonical_events VALUES (?, ?, ?)", (canonical_id, now, now))
-                elif lm and not rm or rm and not lm:
+                else:
                     conn.execute(
                         "UPDATE canonical_events SET updated_at_utc=? WHERE canonical_event_id=?",
                         (now, canonical_id),
@@ -142,6 +155,14 @@ def reconcile_pair(
                         conn.execute(
                             "INSERT INTO canonical_event_members VALUES (?, ?, ?, ?)",
                             (canonical_id, item["event_id"], revision, now),
+                        )
+                    else:
+                        # A source event can gain revisions after it was linked.
+                        # Re-accepting the current pair refreshes the reviewed revision.
+                        conn.execute(
+                            "UPDATE canonical_event_members SET source_revision_at_link=? "
+                            "WHERE canonical_event_id=? AND event_id=?",
+                            (revision, canonical_id, item["event_id"]),
                         )
 
             decision_id = f"decision:{uuid.uuid4()}"
@@ -199,6 +220,11 @@ def reconciliation_status(database_path: str | Path) -> dict:
             "rejected_decisions": conn.execute(
                 "SELECT COUNT(*) FROM reconciliation_decisions WHERE decision='rejected'"
             ).fetchone()[0],
+            "stale_memberships": conn.execute(
+                "SELECT COUNT(*) FROM canonical_event_members m "
+                "JOIN events e USING(event_id) "
+                "WHERE m.source_revision_at_link <> e.revision"
+            ).fetchone()[0],
         }
     finally:
         conn.close()
@@ -217,12 +243,42 @@ def pending_candidates(
             "SELECT DISTINCT left_event_id, left_revision, right_event_id, right_revision "
             "FROM reconciliation_decisions"
         ).fetchall()
+        linked_pairs = conn.execute(
+            """
+            SELECT left_member.event_id AS left_event_id,
+                   left_member.source_revision_at_link AS left_linked_revision,
+                   left_event.revision AS left_revision,
+                   right_member.event_id AS right_event_id,
+                   right_member.source_revision_at_link AS right_linked_revision,
+                   right_event.revision AS right_revision
+            FROM canonical_event_members AS left_member
+            JOIN canonical_event_members AS right_member
+              ON left_member.canonical_event_id = right_member.canonical_event_id
+             AND left_member.event_id < right_member.event_id
+            JOIN events AS left_event ON left_event.event_id = left_member.event_id
+            JOIN events AS right_event ON right_event.event_id = right_member.event_id
+            WHERE left_event.provider <> right_event.provider
+            """
+        ).fetchall()
     finally:
         conn.close()
+
     excluded = {
         (row["left_event_id"], row["left_revision"], row["right_event_id"], row["right_revision"])
         for row in decisions
     }
+    # A pair already linked into one canonical identity is not pending while
+    # both linked source revisions are still current. A changed source revision
+    # reopens the pair for human review.
+    for row in linked_pairs:
+        if (
+            row["left_linked_revision"] == row["left_revision"]
+            and row["right_linked_revision"] == row["right_revision"]
+        ):
+            excluded.add(
+                (row["left_event_id"], row["left_revision"], row["right_event_id"], row["right_revision"])
+            )
+
     report = (
         match_candidates(database_path, limit=limit, excluded_pairs=excluded).to_dict()
         if strategy == "exact"
@@ -243,7 +299,8 @@ def canonical_list(database_path: str | Path, *, limit: int = 100) -> list[dict]
             "WITH selected AS (SELECT canonical_event_id FROM canonical_events "
             "ORDER BY canonical_event_id LIMIT ?) "
             "SELECT c.canonical_event_id, c.created_at_utc, c.updated_at_utc, "
-            "m.event_id, m.source_revision_at_link, m.linked_at_utc, e.provider, e.payload_json "
+            "m.event_id, m.source_revision_at_link, m.linked_at_utc, e.provider, "
+            "e.revision AS current_revision, e.payload_json "
             "FROM selected s JOIN canonical_events c USING(canonical_event_id) "
             "LEFT JOIN canonical_event_members m USING(canonical_event_id) "
             "LEFT JOIN events e USING(event_id) ORDER BY c.canonical_event_id, m.event_id",
@@ -266,6 +323,8 @@ def canonical_list(database_path: str | Path, *, limit: int = 100) -> list[dict]
                         "event_id": row["event_id"],
                         "provider": row["provider"],
                         "source_revision_at_link": row["source_revision_at_link"],
+                        "current_revision": row["current_revision"],
+                        "membership_stale": row["source_revision_at_link"] != row["current_revision"],
                         "linked_at_utc": row["linked_at_utc"],
                         "event": json.loads(row["payload_json"]),
                     }

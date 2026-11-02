@@ -337,3 +337,12 @@ thresholds when no project/ticker corroboration exists. It ranks candidates
 for human review only. Scores are not probabilities; no records are merged
 or changed and no additional website requests are made. See
 [scored matching rules and limitations](docs/CROSS_PROVIDER_CANDIDATES.md).
+
+
+## Gate 15.1 — reconciliation integrity
+
+The reconciliation follow-up prevents contradictory decisions for the same
+source revisions, reopens stale memberships after source updates, refreshes
+membership revision markers after re-acceptance, and avoids re-proposing pairs
+already represented by a current canonical identity. Status/list output makes
+stale memberships visible. See [cross-provider reconciliation](docs/CROSS_PROVIDER_CANDIDATES.md).
