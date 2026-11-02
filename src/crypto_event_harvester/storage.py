@@ -260,8 +260,9 @@ def store_status(database_path: str | Path) -> dict[str, object]:
         providers = conn.execute(
             "SELECT provider, COUNT(*) AS events FROM events GROUP BY provider ORDER BY provider"
         ).fetchall()
+        database_version = conn.execute("PRAGMA user_version").fetchone()[0]
         return {
-            "database_version": DB_VERSION,
+            "database_version": database_version,
             "events": totals["events"],
             "revisions": totals["revisions"],
             "earliest_seen_at_utc": totals["earliest_seen"],

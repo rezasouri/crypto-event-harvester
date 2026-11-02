@@ -101,6 +101,72 @@ def test_accept_create_expand_reversed_and_idempotent(tmp_path):
     )
     assert expanded["canonical_event_id"] == accepted["canonical_event_id"]
     assert len(canonical_list(db)[0]["members"]) == 3
+    # The transitive second/third pair is already represented by the same
+    # current canonical identity and must not be proposed again.
+    assert pending_candidates(db, strategy="exact")["candidates"] == []
+
+
+def test_stale_membership_reopens_and_accept_refreshes_revision(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, _ = _seed(db)
+    accepted = reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    assert pending_candidates(db, strategy="exact")["candidates"] == []
+
+    changed = replace(first, description="source description revised after linking")
+    sync_events(db, [changed], observed_at_utc="2026-10-29T10:00:00+00:00")
+    assert reconciliation_status(db)["stale_memberships"] == 1
+    stale_members = {item["event_id"]: item for item in canonical_list(db)[0]["members"]}
+    assert stale_members[first.event_id]["membership_stale"] is True
+    pending = pending_candidates(db, strategy="exact")
+    assert pending["candidates_total"] == 1
+    candidate = pending["candidates"][0]
+    assert {candidate["left"]["event_id"], candidate["right"]["event_id"]} == {
+        first.event_id, second.event_id
+    }
+
+    refreshed = reconcile_pair(
+        db,
+        left_event_id=second.event_id,
+        right_event_id=first.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    assert refreshed["canonical_event_id"] == accepted["canonical_event_id"]
+    members = {item["event_id"]: item for item in canonical_list(db)[0]["members"]}
+    assert members[first.event_id]["source_revision_at_link"] == 2
+    assert members[first.event_id]["current_revision"] == 2
+    assert members[first.event_id]["membership_stale"] is False
+    assert reconciliation_status(db)["stale_memberships"] == 0
+    assert pending_candidates(db, strategy="exact")["candidates"] == []
+
+
+def test_opposite_decisions_for_same_revisions_are_conflicts(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, _ = _seed(db)
+    reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    with pytest.raises(ValueError, match="opposite decision"):
+        reconcile_pair(
+            db,
+            left_event_id=second.event_id,
+            right_event_id=first.event_id,
+            strategy="similarity",
+            decision="rejected",
+        )
+    history = decision_history(db, event_id=first.event_id)
+    assert len(history) == 1
+    assert history[0]["decision"] == "accepted"
 
 
 def test_reject_audits_without_members_and_revision_change_reopens(tmp_path):
@@ -200,6 +266,7 @@ def test_stale_ineligible_pairs_and_failed_transactions(tmp_path):
         "memberships": 0,
         "accepted_decisions": 0,
         "rejected_decisions": 0,
+        "stale_memberships": 0,
     }
 
 
@@ -284,9 +351,12 @@ def test_cli_accept_reject_and_invalid_arguments(tmp_path, capsys):
                 "exact",
             ]
         )
-        == 0
+        == 2
     )
-    assert json.loads(capsys.readouterr().out)["decision"] == "rejected"
+    conflict = json.loads(capsys.readouterr().out)
+    assert conflict["status"] == "conflict"
+    assert "opposite decision" in conflict["error"]
+
     assert main(["reconcile", "--db", str(db), "--action", "accept"]) == 2
     error = json.loads(capsys.readouterr().out)
     assert error["status"] == "error"

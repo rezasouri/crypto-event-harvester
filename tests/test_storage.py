@@ -12,6 +12,7 @@ from crypto_event_harvester.providers.coindar import parse_listing as parse_coin
 from crypto_event_harvester.providers.cryptoevents import parse_listing as parse_conferences
 from crypto_event_harvester.providers.icodrops import parse_listing as parse_icodrops
 from crypto_event_harvester.storage import (
+    _SCHEMA,
     event_history,
     list_events,
     store_status,
@@ -167,6 +168,16 @@ def test_reject_duplicate_snapshot_before_db_write(tmp_path):
     with pytest.raises(ValueError, match="duplicate"):
         sync_events(db, [event, event], observed_at_utc=T1)
     assert not db.exists()
+
+
+def test_store_status_reports_actual_legacy_database_version(tmp_path):
+    db = tmp_path / "legacy.sqlite"
+    with sqlite3.connect(db) as conn:
+        conn.executescript(_SCHEMA + "\nPRAGMA user_version = 1;")
+
+    assert store_status(db)["database_version"] == 1
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
 
 
 def test_read_unknown_db_fails_without_creating_file(tmp_path):

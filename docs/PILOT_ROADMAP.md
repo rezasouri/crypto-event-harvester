@@ -93,3 +93,12 @@ against current database snapshots and revisions inside a transaction.
 Conflicting canonical identities are never merged, and provider-specific
 events, IDs and revision histories remain unchanged. See
 [manual reconciliation](CROSS_PROVIDER_CANDIDATES.md).
+
+
+Gate 15.1 status — reconciliation integrity
+
+The integrity follow-up blocks opposite decisions for the same source revision
+pair, refreshes canonical membership revision markers after re-acceptance,
+filters already-linked current pairs from pending review, and surfaces stale
+memberships in status/list output. SQLite status reports the actual
+`user_version`. Offline regression tests cover these cases.
