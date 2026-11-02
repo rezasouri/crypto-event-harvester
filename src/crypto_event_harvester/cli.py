@@ -400,7 +400,6 @@ def _store(args) -> int:
 
 def _reconcile(args) -> int:
     from .matching_evaluation import evaluate_reconciliation
-    from .review_dataset import export_review_dataset, import_review_dataset
     from .reconciliation import (
         canonical_list,
         decision_history,
@@ -411,6 +410,7 @@ def _reconcile(args) -> int:
         split_canonical_identity,
         unlink_member,
     )
+    from .review_dataset import export_review_dataset, import_review_dataset
 
     try:
         if args.action in {"accept", "reject"}:
