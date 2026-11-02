@@ -71,3 +71,14 @@ SQLite event snapshots to surface **possible** cross-provider duplicates
 with strict title/date equality and no explicit project/ticker conflict.
 No automatic source identity merge, revision rewriting or added collection
 requests. See [review-only candidate matching](CROSS_PROVIDER_CANDIDATES.md).
+
+
+## Gate 14 status — scored cross-provider candidate matching
+
+The exact matcher remains the default. An opt-in lexical similarity strategy
+uses date-overlap blocking, token and character similarity, entity-conflict
+vetoes, stricter thresholds when project/ticker corroboration is absent, and
+score-ranked review candidates. Scores are not probabilities and never
+trigger automatic merges. It reads the current SQLite snapshots only; no
+network requests or paid services are involved. See
+[CROSS_PROVIDER_CANDIDATES.md](CROSS_PROVIDER_CANDIDATES.md).

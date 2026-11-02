@@ -317,3 +317,23 @@ titles and explicit project/ticker conflicts are excluded; month/quarter
 headings do not become guessed dates. Both source links and revision
 numbers remain visible, and no event row or checkpoint is modified.
 See [candidate matching and acceptance limits](docs/CROSS_PROVIDER_CANDIDATES.md).
+
+
+## Gate 14: scored cross-provider similarity (opt-in)
+
+The original exact-title matcher remains the default. To discover more
+possible duplicates where providers phrase the title differently, use the
+offline lexical-similarity strategy:
+
+```bash
+uv run crypto-harvester candidates --db data/harvest.sqlite \
+  --strategy similarity --min-score 0.80 --limit 100 \
+  --output artifacts/cross-provider-similarity.json
+```
+
+The matcher requires overlapping explicit calendar dates, rejects conflicting
+project/ticker metadata and event-type conflicts, and uses stricter title
+thresholds when no project/ticker corroboration exists. It ranks candidates
+for human review only. Scores are not probabilities; no records are merged
+or changed and no additional website requests are made. See
+[scored matching rules and limitations](docs/CROSS_PROVIDER_CANDIDATES.md).

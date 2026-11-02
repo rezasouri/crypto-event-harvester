@@ -108,6 +108,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     candidates.add_argument("--db", required=True, type=Path)
     candidates.add_argument("--limit", type=int, default=100, help="Max returned pairs (1–1000)")
+    candidates.add_argument(
+        "--strategy", choices=("exact", "similarity"), default="exact",
+        help="Exact title/date matching or scored fuzzy matching (default: exact)",
+    )
+    candidates.add_argument(
+        "--min-score", type=float, default=0.80,
+        help="Minimum similarity score for --strategy similarity (0–1)",
+    )
     candidates.add_argument("--output", type=Path, help="Optional JSON report path")
 
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
@@ -288,19 +296,27 @@ def _cryptoevents_backfill(args) -> int:
 
 
 def _candidates(args) -> int:
-    from .cross_provider_candidates import match_candidates
+    from .cross_provider_candidates import match_candidates, match_similar_candidates
 
     try:
-        report = match_candidates(args.db, limit=args.limit).to_dict()
+        if args.strategy == "similarity":
+            report = match_similar_candidates(
+                args.db, limit=args.limit, min_score=args.min_score
+            ).to_dict()
+        else:
+            report = match_candidates(args.db, limit=args.limit).to_dict()
         output = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(output, encoding="utf-8")
-            print(json.dumps({
+            summary = {
                 "output": str(args.output),
                 "candidates_total": report["candidates_total"],
                 "returned": report["returned"],
-            }, ensure_ascii=False))
+            }
+            if "strategy" in report:
+                summary["strategy"] = report["strategy"]
+            print(json.dumps(summary, ensure_ascii=False))
         else:
             print(output, end="")
         return 0

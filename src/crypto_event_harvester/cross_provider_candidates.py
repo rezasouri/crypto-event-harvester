@@ -5,15 +5,28 @@ identities, modifies verified events or rewrites their revision histories.
 """
 from __future__ import annotations
 
+import heapq
 import json
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
+from difflib import SequenceMatcher
 from pathlib import Path
 
 from .storage import _connect
 
 MIN_TITLE_LENGTH = 10
+GENERIC_TITLE_TERMS = frozenset({
+    "a", "an", "and", "at", "by", "for", "from", "in", "of", "on", "or",
+    "the", "to", "with", "will", "be", "is", "are",
+    "token", "tokens", "listing", "listed", "launch", "airdrop",
+    "partnership", "announcement", "mainnet", "staking", "release",
+    "upgrade", "ama", "webinar", "conference", "event", "events",
+    "crypto", "cryptocurrency", "deadline", "ends", "ending", "starts",
+    "starting", "opens", "opening", "closes", "closing", "unlock",
+    "unlocks", "burn", "vote", "voting", "snapshot", "proposal",
+})
 GENERIC_TITLES = frozenset({
     "listing", "token listing", "launch", "token launch",
     "airdrop", "partnership", "announcement", "mainnet",
@@ -145,3 +158,315 @@ def match_candidates(database_path: str | Path, *, limit: int = 100) -> MatchRes
                         "right": _evidence(right, rev_right),
                     })
     return MatchResult(len(rows), eligible, total, candidates)
+
+
+@dataclass(frozen=True)
+class SimilarityResult:
+    examined: int
+    eligible: int
+    overlapping_pairs_examined: int
+    candidates_total: int
+    candidates: list[dict]
+    min_score: float
+
+    def to_dict(self) -> dict:
+        return {
+            "mode": "review_only",
+            "strategy": "similarity",
+            "examined": self.examined,
+            "eligible_with_explicit_calendar_dates": self.eligible,
+            "overlapping_cross_provider_pairs_examined": self.overlapping_pairs_examined,
+            "minimum_score": self.min_score,
+            "candidates_total": self.candidates_total,
+            "returned": len(self.candidates),
+            "candidates": self.candidates,
+            "source_events_modified": 0,
+            "source_requests": 0,
+        }
+
+
+def _meaningful_tokens(value: str | None) -> set[str]:
+    return {
+        token for token in _canonical(value).split()
+        if token not in GENERIC_TITLE_TERMS and len(token) > 1
+    }
+
+
+def _title_similarity(left: str | None, right: str | None) -> tuple[float, float, float]:
+    left_tokens = _meaningful_tokens(left)
+    right_tokens = _meaningful_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0, 0.0, 0.0
+    intersection = len(left_tokens & right_tokens)
+    union = len(left_tokens | right_tokens)
+    token_score = intersection / union
+    left_sorted = " ".join(sorted(left_tokens))
+    right_sorted = " ".join(sorted(right_tokens))
+    character_score = SequenceMatcher(
+        None, left_sorted, right_sorted, autojunk=False
+    ).ratio()
+    combined = 0.55 * character_score + 0.45 * token_score
+    return round(combined, 4), round(character_score, 4), round(token_score, 4)
+
+
+def _date_overlap(left: dict, right: dict) -> tuple[float, str] | None:
+    try:
+        left_start = date.fromisoformat(left["start_date"])
+        left_end = date.fromisoformat(left["end_date"])
+        right_start = date.fromisoformat(right["start_date"])
+        right_end = date.fromisoformat(right["end_date"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if left_end < right_start or right_end < left_start:
+        return None
+    if left_start == right_start and left_end == right_end:
+        return 1.0, "exact_range"
+    if left_start == right_start:
+        return 0.97, "same_start"
+    if left_end == right_end:
+        return 0.95, "same_end"
+    if left_start <= right_start and left_end >= right_end:
+        return 0.90, "left_contains_right"
+    if right_start <= left_start and right_end >= left_end:
+        return 0.90, "right_contains_left"
+    return 0.82, "partial_overlap"
+
+
+def _entity_evidence(left: dict, right: dict) -> tuple[bool, list[str]] | None:
+    """Return None for hard conflicts; missing metadata is neutral."""
+    matches = []
+    for key in ("project", "ticker"):
+        a = _canonical(left.get(key))
+        b = _canonical(right.get(key))
+        if a and b and a != b:
+            return None
+        if a and b and a == b:
+            matches.append(key)
+    left_type, right_type = left.get("event_type"), right.get("event_type")
+    if (
+        left_type in {"conference", "token_event"}
+        and right_type in {"conference", "token_event"}
+        and left_type != right_type
+    ):
+        return None
+    return bool(matches), matches
+
+
+def _similarity_evidence(left: dict, right: dict) -> dict | None:
+    if left.get("provider") == right.get("provider"):
+        return None
+    if left.get("date_precision") not in {"day", "range"}:
+        return None
+    if right.get("date_precision") not in {"day", "range"}:
+        return None
+    left_title = _canonical(left.get("title"))
+    right_title = _canonical(right.get("title"))
+    if (
+        len(left_title) < MIN_TITLE_LENGTH
+        or len(right_title) < MIN_TITLE_LENGTH
+        or left_title in GENERIC_TITLES
+        or right_title in GENERIC_TITLES
+    ):
+        return None
+    title_score, character_score, token_score = _title_similarity(
+        left.get("title"), right.get("title")
+    )
+    if not title_score:
+        return None
+    entity = _entity_evidence(left, right)
+    if entity is None:
+        return None
+    entity_match, entity_matches = entity
+    # Without corroborating project/ticker metadata, require a very strong
+    # title match and at least two meaningful words on both sides.
+    left_tokens = _meaningful_tokens(left.get("title"))
+    right_tokens = _meaningful_tokens(right.get("title"))
+    if not entity_match and (len(left_tokens) < 2 or len(right_tokens) < 2):
+        return None
+    date_result = _date_overlap(left, right)
+    if date_result is None:
+        return None
+    date_score, date_relation = date_result
+    if entity_match:
+        if title_score < 0.70:
+            return None
+        score = 0.65 * title_score + 0.15 * date_score + 0.20
+    else:
+        if title_score < 0.90:
+            return None
+        score = 0.82 * title_score + 0.18 * date_score
+    return {
+        "score": round(score, 4),
+        "title_similarity": title_score,
+        "character_similarity": character_score,
+        "token_jaccard": token_score,
+        "date_similarity": date_score,
+        "date_relation": date_relation,
+        "project_match": (
+            "project" in entity_matches if left.get("project") and right.get("project") else None
+        ),
+        "ticker_match": "ticker" in entity_matches if left.get("ticker") and right.get("ticker") else None,
+        "shared_entity_fields": entity_matches,
+        "threshold_path": "entity_corroborated" if entity_match else "title_only_strict",
+    }
+
+
+
+def build_review_assessment(
+    left: dict,
+    right: dict,
+    evidence: dict,
+) -> dict:
+    """Build an explainable, review-only assessment for a candidate pair."""
+
+    supporting_signals = []
+    caution_flags = []
+
+    title_score = float(evidence.get("title_similarity", 0.0))
+
+    # Title similarity assessment
+    if title_score >= 0.95:
+        supporting_signals.append("very_high_title_similarity")
+    elif title_score >= 0.85:
+        supporting_signals.append("high_title_similarity")
+    else:
+        caution_flags.append("moderate_title_similarity")
+
+    # Project and ticker corroboration
+    for field in ("project", "ticker"):
+        left_value = _canonical(left.get(field))
+        right_value = _canonical(right.get(field))
+
+        if left_value and right_value:
+            if left_value == right_value:
+                supporting_signals.append(f"{field}_matches")
+            else:
+                caution_flags.append(f"{field}_conflict")
+        else:
+            caution_flags.append(f"{field}_not_fully_verified")
+
+    # Date relationship
+    date_relation = evidence.get("date_relation")
+
+    if date_relation == "exact_range":
+        supporting_signals.append("exact_date_range_match")
+    elif date_relation in {"same_start", "same_end"}:
+        caution_flags.append("partial_date_boundary_match")
+    elif date_relation in {
+        "left_contains_right",
+        "right_contains_left",
+        "partial_overlap",
+    }:
+        caution_flags.append("date_ranges_only_overlap")
+    else:
+        caution_flags.append("date_relationship_uncertain")
+
+    # Matching strategy
+    if evidence.get("threshold_path") == "title_only_strict":
+        caution_flags.append("no_shared_project_or_ticker_corroboration")
+
+    return {
+        "status": "manual_review_required",
+        "supporting_signals": sorted(set(supporting_signals)),
+        "caution_flags": sorted(set(caution_flags)),
+        "automatic_merge_allowed": False,
+    }
+
+
+
+def match_similar_candidates(
+    database_path: str | Path, *, limit: int = 100, min_score: float = 0.80
+) -> SimilarityResult:
+    """Find fuzzy cross-provider candidates from current snapshots, offline.
+
+    Date intervals must overlap. Explicit project/ticker conflicts and
+    conference-vs-token-event conflicts veto a pair. Without a shared
+    project/ticker, a high title similarity is mandatory. Every result is
+    review-only; no source identity or SQLite row is modified.
+    """
+    if not 1 <= limit <= 1000:
+        raise ValueError("--limit must be between 1 and 1000")
+    if not 0.0 <= min_score <= 1.0:
+        raise ValueError("--min-score must be between 0 and 1")
+    conn = _connect(Path(database_path), create=False)
+    try:
+        rows = conn.execute(
+            "SELECT event_id, provider, revision, payload_json "
+            "FROM events ORDER BY event_id"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    eligible_items: list[tuple[dict, int]] = []
+    for row in rows:
+        item = json.loads(row["payload_json"])
+        if item.get("event_id") != row["event_id"] or item.get("provider") != row["provider"]:
+            raise ValueError("stored event identity disagrees with SQLite provenance")
+        if item.get("date_precision") not in {"day", "range"}:
+            continue
+        try:
+            date.fromisoformat(item["start_date"])
+            date.fromisoformat(item["end_date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if item["start_date"] > item["end_date"]:
+            raise ValueError("stored event has an inverted calendar date range")
+        eligible_items.append((item, row["revision"]))
+
+    eligible_items.sort(key=lambda pair: (
+        pair[0]["start_date"], pair[0]["end_date"], pair[0]["event_id"]
+    ))
+    candidate_heap: list[tuple[float, int, dict]] = []
+    total = 0
+    pairs_examined = 0
+    pair_order = 0
+    for index, (left, left_revision) in enumerate(eligible_items):
+        left_end = date.fromisoformat(left["end_date"])
+        for right, right_revision in eligible_items[index + 1:]:
+            right_start = date.fromisoformat(right["start_date"])
+            if right_start > left_end:
+                break
+            if left["provider"] == right["provider"]:
+                continue
+            pairs_examined += 1
+            evidence = _similarity_evidence(left, right)
+            if evidence is None or evidence["score"] < min_score:
+                continue
+            total += 1
+            candidate = {
+                "match_type": "review_required",
+                "confidence_band": (
+                    "high" if evidence["score"] >= 0.92
+                    and evidence["title_similarity"] >= 0.90
+                    else "medium"
+                ),
+                "evidence": evidence,
+                "left": _evidence(left, left_revision),
+                "right": _evidence(right, right_revision),
+                "review_assessment": build_review_assessment(
+                    left, right, evidence
+                ),
+            }
+            # Keep the highest-scoring bounded result set without retaining
+            # every pair in memory. Earlier pairs win exact score ties.
+            heap_item = (evidence["score"], -pair_order, candidate)
+            pair_order += 1
+            if len(candidate_heap) < limit:
+                heapq.heappush(candidate_heap, heap_item)
+            elif heap_item[:2] > candidate_heap[0][:2]:
+                heapq.heapreplace(candidate_heap, heap_item)
+
+    candidates = [item[2] for item in candidate_heap]
+    candidates.sort(key=lambda item: (
+        -item["evidence"]["score"],
+        item["left"]["event_id"],
+        item["right"]["event_id"],
+    ))
+    return SimilarityResult(
+        examined=len(rows),
+        eligible=len(eligible_items),
+        overlapping_pairs_examined=pairs_examined,
+        candidates_total=total,
+        candidates=candidates,
+        min_score=min_score,
+    )
