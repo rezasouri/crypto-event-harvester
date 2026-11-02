@@ -23,6 +23,26 @@ from crypto_event_harvester.storage import sync_events
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
+def _downgrade_to_v1(database_path):
+    conn = sqlite3.connect(database_path)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    triggers = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='trigger'"
+    ).fetchall()
+    for (name,) in triggers:
+        conn.execute(f'DROP TRIGGER "{name}"')
+    for table in (
+        "canonical_membership_actions",
+        "reconciliation_decisions",
+        "canonical_event_members",
+        "canonical_events",
+    ):
+        conn.execute(f'DROP TABLE IF EXISTS "{table}"')
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+
+
 def _seed(database_path):
     ico = normalize_event(
         parse_icodrops((FIXTURES / "icodrops_upcoming.html").read_text())[0]
@@ -59,6 +79,7 @@ def _seed(database_path):
         events,
         observed_at_utc="2026-10-28T10:00:00+00:00",
     )
+    _downgrade_to_v1(database_path)
     return events
 
 
