@@ -346,3 +346,27 @@ source revisions, reopens stale memberships after source updates, refreshes
 membership revision markers after re-acceptance, and avoids re-proposing pairs
 already represented by a current canonical identity. Status/list output makes
 stale memberships visible. See [cross-provider reconciliation](docs/CROSS_PROVIDER_CANDIDATES.md).
+
+## Gate 16 — canonical identity lifecycle
+
+Correct an accepted identity without rewriting provider events or revisions:
+
+```bash
+# Remove one source event from an identity (the identity is retained, even if empty).
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action unlink \
+  --canonical-event-id canonical:... --event-id coindar:456 \
+  --note "Reviewed as a different event"
+
+# Move a proper subset into a new canonical identity.
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action split \
+  --canonical-event-id canonical:... --event-ids coindar:456 cryptoevents:789
+
+# Inspect the immutable unlink/split audit trail.
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action membership-history \
+  --canonical-event-id canonical:...
+```
+
+Unlink and split are transactional and audited. A split must leave at least
+one member in the original identity. Empty identities remain as historical
+records; source event snapshots and revision history are never deleted or
+rewritten. SQLite schema version 2 databases migrate additively to version 3.

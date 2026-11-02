@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .normalization import UnifiedEvent
 
-DB_VERSION = 2
+DB_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -104,6 +104,99 @@ END;
 """
 
 
+_LIFECYCLE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS canonical_membership_actions (
+    action_id TEXT PRIMARY KEY,
+    operation_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('unlinked', 'split')),
+    canonical_event_id TEXT NOT NULL REFERENCES canonical_events(canonical_event_id),
+    target_canonical_event_id TEXT REFERENCES canonical_events(canonical_event_id),
+    event_id TEXT NOT NULL REFERENCES events(event_id),
+    source_revision_at_link INTEGER NOT NULL CHECK (source_revision_at_link >= 1),
+    current_source_revision INTEGER NOT NULL CHECK (current_source_revision >= 1),
+    linked_at_utc TEXT NOT NULL,
+    note TEXT,
+    acted_at_utc TEXT NOT NULL,
+    CHECK (
+        (action = 'unlinked' AND target_canonical_event_id IS NULL)
+        OR
+        (action = 'split' AND target_canonical_event_id IS NOT NULL
+            AND target_canonical_event_id <> canonical_event_id)
+    )
+);
+CREATE INDEX IF NOT EXISTS ix_membership_actions_event
+    ON canonical_membership_actions(event_id, acted_at_utc);
+CREATE INDEX IF NOT EXISTS ix_membership_actions_canonical
+    ON canonical_membership_actions(canonical_event_id, acted_at_utc);
+CREATE INDEX IF NOT EXISTS ix_membership_actions_operation
+    ON canonical_membership_actions(operation_id);
+CREATE TRIGGER IF NOT EXISTS trg_canonical_member_provider_update
+BEFORE UPDATE OF canonical_event_id ON canonical_event_members
+WHEN EXISTS (
+    SELECT 1 FROM canonical_event_members old
+    JOIN events old_event ON old_event.event_id = old.event_id
+    JOIN events new_event ON new_event.event_id = NEW.event_id
+    WHERE old.canonical_event_id = NEW.canonical_event_id
+      AND old.event_id <> OLD.event_id
+      AND old_event.provider = new_event.provider
+)
+BEGIN
+    SELECT RAISE(ABORT, 'canonical identity already has a member from this provider');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_canonical_member_delete_audited
+BEFORE DELETE ON canonical_event_members
+WHEN NOT EXISTS (
+    SELECT 1 FROM canonical_membership_actions a
+    WHERE a.action = 'unlinked'
+      AND a.canonical_event_id = OLD.canonical_event_id
+      AND a.event_id = OLD.event_id
+      AND a.source_revision_at_link = OLD.source_revision_at_link
+      AND a.linked_at_utc = OLD.linked_at_utc
+)
+BEGIN
+    SELECT RAISE(ABORT, 'canonical membership removal requires an audit action');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_canonical_member_move_audited
+BEFORE UPDATE OF canonical_event_id ON canonical_event_members
+WHEN NEW.canonical_event_id <> OLD.canonical_event_id
+ AND NOT EXISTS (
+    SELECT 1 FROM canonical_membership_actions a
+    WHERE a.action = 'split'
+      AND a.canonical_event_id = OLD.canonical_event_id
+      AND a.target_canonical_event_id = NEW.canonical_event_id
+      AND a.event_id = OLD.event_id
+      AND a.source_revision_at_link = OLD.source_revision_at_link
+      AND a.linked_at_utc = OLD.linked_at_utc
+)
+BEGIN
+    SELECT RAISE(ABORT, 'canonical membership move requires a split audit action');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_membership_action_matches_current_member
+BEFORE INSERT ON canonical_membership_actions
+WHEN NOT EXISTS (
+    SELECT 1 FROM canonical_event_members m
+    JOIN events e USING(event_id)
+    WHERE m.canonical_event_id = NEW.canonical_event_id
+      AND m.event_id = NEW.event_id
+      AND m.source_revision_at_link = NEW.source_revision_at_link
+      AND m.linked_at_utc = NEW.linked_at_utc
+      AND e.revision = NEW.current_source_revision
+)
+BEGIN
+    SELECT RAISE(ABORT, 'membership audit action must match a current member snapshot');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_membership_actions_no_update
+BEFORE UPDATE ON canonical_membership_actions
+BEGIN
+    SELECT RAISE(ABORT, 'canonical membership actions are append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_membership_actions_no_delete
+BEFORE DELETE ON canonical_membership_actions
+BEGIN
+    SELECT RAISE(ABORT, 'canonical membership actions are append-only');
+END;
+"""
+
 @dataclass(frozen=True, slots=True)
 class SyncResult:
     inserted: int
@@ -149,17 +242,22 @@ def _connect(path: Path, *, create: bool) -> sqlite3.Connection:
     if create:
         conn.execute("PRAGMA journal_mode = WAL")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, DB_VERSION):
+        if version not in (0, 1, 2, DB_VERSION):
             conn.close()
             raise RuntimeError(f"unsupported event database version: {version}")
         if version == 0:
             conn.executescript(
-                "BEGIN IMMEDIATE;\n" + _SCHEMA + _RECONCILIATION_SCHEMA
+                "BEGIN IMMEDIATE;\n" + _SCHEMA + _RECONCILIATION_SCHEMA + _LIFECYCLE_SCHEMA
                 + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
             )
         elif version == 1:
             conn.executescript(
-                "BEGIN IMMEDIATE;\n" + _RECONCILIATION_SCHEMA
+                "BEGIN IMMEDIATE;\n" + _RECONCILIATION_SCHEMA + _LIFECYCLE_SCHEMA
+                + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
+            )
+        elif version == 2:
+            conn.executescript(
+                "BEGIN IMMEDIATE;\n" + _LIFECYCLE_SCHEMA
                 + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
             )
     return conn

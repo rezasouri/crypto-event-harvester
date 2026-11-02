@@ -40,7 +40,7 @@ def test_insert_both_providers_and_version_history(tmp_path):
         "inserted": 10, "updated": 0, "unchanged": 0, "stale_skipped": 0, "total": 10
     }
     status = store_status(db)
-    assert status["database_version"] == 2
+    assert status["database_version"] == 3
     assert status["events"] == status["revisions"] == 10
     assert status["providers"] == {"coindar": 4, "cryptoevents": 4, "icodrops": 2}
     saved = list_events(db)

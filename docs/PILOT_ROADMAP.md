@@ -102,3 +102,14 @@ pair, refreshes canonical membership revision markers after re-acceptance,
 filters already-linked current pairs from pending review, and surfaces stale
 memberships in status/list output. SQLite status reports the actual
 `user_version`. Offline regression tests cover these cases.
+
+## Gate 16 status — canonical identity lifecycle
+
+Adds transactional `unlink` and `split` operations for correcting manually
+accepted canonical identities. Every membership removal or move requires an
+append-only audit row, enforced by SQLite triggers. Unlink retains the
+canonical identity even when it becomes empty; split moves a proper subset
+to a new identity and leaves at least one source member. The
+`membership-history` action exposes the lifecycle audit trail. Source event
+snapshots and immutable revisions remain untouched. SQLite schema version 2
+migrates additively to version 3.

@@ -40,10 +40,14 @@ Python standard library `sqlite3`; no Redis, Docker, paid API, or cloud server.
 keyed by `(event_id, revision)`. Foreign keys and a one-to-many relationship
 are enforced. An index on provider supports filtered listings.
 
-`PRAGMA user_version=1` is checked at initialization so future migrations
-can be introduced without silently changing an incompatible database.
-Writes use WAL mode, a busy timeout, and an atomic `BEGIN IMMEDIATE`
-transaction per batch.
+SQLite schema compatibility is tracked with `PRAGMA user_version`.
+The current schema is version 3: version 1 creates the normalized event
+store, version 2 adds canonical reconciliation, and version 3 adds the
+append-only membership lifecycle audit log and integrity triggers. Existing
+version 1 and 2 databases are upgraded additively; source event rows and
+immutable revisions are preserved. Unsupported future versions fail closed.
+Writes use WAL mode, a busy timeout, and atomic `BEGIN IMMEDIATE`
+transactions.
 
 ## Reconciliation rules
 
