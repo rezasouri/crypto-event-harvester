@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from crypto_event_harvester.cli import main
-from crypto_event_harvester.cross_provider_candidates import match_similar_candidates
+from crypto_event_harvester.cross_provider_candidates import (
+    build_review_assessment,
+    match_similar_candidates,
+)
 from crypto_event_harvester.normalization import normalize_event
 from crypto_event_harvester.providers.coindar import parse_listing as parse_coindar
 from crypto_event_harvester.providers.cryptoevents import parse_listing as parse_cryptoevents
@@ -71,6 +74,11 @@ def test_similarity_finds_fuzzy_title_with_matching_project(tmp_path):
     assert candidate["evidence"]["title_similarity"] < 1.0
     assert candidate["evidence"]["score"] >= 0.80
     assert candidate["left"]["provider"] != candidate["right"]["provider"]
+    assessment = candidate["review_assessment"]
+    assert assessment["status"] == "manual_review_required"
+    assert "project_matches" in assessment["supporting_signals"]
+    assert "ticker_matches" in assessment["supporting_signals"]
+    assert assessment["automatic_merge_allowed"] is False
 
 
 def test_similarity_allows_reordered_words_without_entity_metadata(tmp_path):
@@ -237,3 +245,38 @@ def test_limit_returns_highest_scores_not_first_encountered_pairs(tmp_path):
     assert len(result.candidates) == 1
     assert result.candidates[0]["evidence"]["title_similarity"] == 1.0
     assert result.candidates[0]["evidence"]["score"] == 1.0
+
+
+def test_review_assessment_flags_missing_metadata_and_date_overlap():
+    left = {"project": "Ethereum", "ticker": "ETH"}
+    right = {"project": "Ethereum", "ticker": None}
+    evidence = {
+        "title_similarity": 0.96,
+        "date_relation": "partial_overlap",
+        "threshold_path": "entity_corroborated",
+    }
+
+    result = build_review_assessment(left, right, evidence)
+
+    assert result["status"] == "manual_review_required"
+    assert "very_high_title_similarity" in result["supporting_signals"]
+    assert "project_matches" in result["supporting_signals"]
+    assert "date_ranges_only_overlap" in result["caution_flags"]
+    assert "ticker_not_fully_verified" in result["caution_flags"]
+    assert result["automatic_merge_allowed"] is False
+
+
+def test_review_assessment_flags_title_only_matching():
+    left = {"project": None, "ticker": None}
+    right = {"project": None, "ticker": None}
+    evidence = {
+        "title_similarity": 0.91,
+        "date_relation": "exact_range",
+        "threshold_path": "title_only_strict",
+    }
+
+    result = build_review_assessment(left, right, evidence)
+
+    assert "exact_date_range_match" in result["supporting_signals"]
+    assert "no_shared_project_or_ticker_corroboration" in result["caution_flags"]
+    assert result["automatic_merge_allowed"] is False
