@@ -23,10 +23,10 @@ def _ratio(numerator: int, denominator: int) -> float | None:
 
 
 def _metrics(labels: list[bool], predictions: list[bool]) -> dict:
-    true_positive = sum(label and prediction for label, prediction in zip(labels, predictions))
-    false_positive = sum(not label and prediction for label, prediction in zip(labels, predictions))
-    true_negative = sum(not label and not prediction for label, prediction in zip(labels, predictions))
-    false_negative = sum(label and not prediction for label, prediction in zip(labels, predictions))
+    true_positive = sum(label and prediction for label, prediction in zip(labels, predictions, strict=True))
+    false_positive = sum(not label and prediction for label, prediction in zip(labels, predictions, strict=True))
+    true_negative = sum(not label and not prediction for label, prediction in zip(labels, predictions, strict=True))
+    false_negative = sum(label and not prediction for label, prediction in zip(labels, predictions, strict=True))
     total = len(labels)
     precision = _ratio(true_positive, true_positive + false_positive)
     recall = _ratio(true_positive, true_positive + false_negative)
