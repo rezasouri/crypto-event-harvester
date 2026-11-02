@@ -125,3 +125,16 @@ A configurable minimum sample size controls the report status, and an empty
 decision history returns `no_reviewed_pairs` rather than fabricated metrics.
 No network requests, database writes, schema migration or automatic merge
 are introduced.
+
+## Gate 18 status — human review dataset workflow
+
+Adds a bounded, read-only CSV export of pending cross-provider candidates and
+a dry-run-first import path for human accept/reject/unsure labels. The batch
+captures deterministic candidate IDs and exact source revision numbers.
+Import revalidates the strategy and evidence and checks expected revisions
+inside the write transaction, so stale exports cannot be applied to changed
+source snapshots. Duplicate candidate IDs and contradictory labels fail
+before writes; per-row conflicts and stale rows are reported explicitly.
+No new schema, source requests, paid APIs or automatic merges are introduced.
+Imported labels feed the Gate 17 retrospective quality evaluator. See
+[CROSS_PROVIDER_CANDIDATES.md](CROSS_PROVIDER_CANDIDATES.md).
