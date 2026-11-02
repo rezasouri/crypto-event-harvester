@@ -125,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument(
         "--action",
         choices=(
-            "status", "pending", "list", "history", "membership-history",
+            "status", "pending", "list", "history", "membership-history", "evaluate",
             "accept", "reject", "unlink", "split",
         ),
         required=True,
@@ -141,6 +141,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reconcile.add_argument("--note")
     reconcile.add_argument("--limit", type=int, default=100)
+    reconcile.add_argument(
+        "--thresholds",
+        nargs="+",
+        type=float,
+        default=[0.70, 0.75, 0.80, 0.85, 0.90, 0.95],
+        help="Similarity thresholds for retrospective evaluation (0–1)",
+    )
+    reconcile.add_argument(
+        "--min-reviewed-pairs",
+        type=int,
+        default=30,
+        help="Minimum reviewed pair revisions required for an evaluation status of evaluated",
+    )
 
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
@@ -370,6 +383,7 @@ def _store(args) -> int:
 
 
 def _reconcile(args) -> int:
+    from .matching_evaluation import evaluate_reconciliation
     from .reconciliation import (
         canonical_list,
         decision_history,
@@ -401,6 +415,12 @@ def _reconcile(args) -> int:
             result = canonical_list(args.db, limit=args.limit)
         elif args.action == "history":
             result = decision_history(args.db, event_id=args.event_id, limit=args.limit)
+        elif args.action == "evaluate":
+            result = evaluate_reconciliation(
+                args.db,
+                thresholds=args.thresholds,
+                min_reviewed_pairs=args.min_reviewed_pairs,
+            )
         elif args.action == "membership-history":
             result = membership_history(
                 args.db,
