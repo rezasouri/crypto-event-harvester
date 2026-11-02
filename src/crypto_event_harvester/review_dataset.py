@@ -399,6 +399,15 @@ def import_review_dataset(
             continue
         try:
             if apply:
+                validate_reconciliation_pair(
+                    database_path,
+                    left_event_id=row["left_event_id"],
+                    right_event_id=row["right_event_id"],
+                    strategy=row["strategy"],
+                    decision=row["decision"],
+                    min_score=row["min_score"],
+                    expected_revisions=row["expected_revisions"],
+                )
                 result = reconcile_pair(
                     database_path,
                     left_event_id=row["left_event_id"],
