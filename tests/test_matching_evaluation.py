@@ -1,6 +1,7 @@
 """Offline tests for retrospective matching-quality evaluation."""
 
 import json
+import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
@@ -70,6 +71,36 @@ def test_empty_review_history_reports_no_metrics_without_inventing_labels(tmp_pa
     assert result["similarity_threshold_sweep"][0]["precision"] is None
     assert result["source_requests"] == 0
     assert result["database_rows_modified"] == 0
+
+
+def test_evaluation_is_read_only_for_legacy_v1_database(tmp_path):
+    database_path = tmp_path / "events.sqlite"
+    _seed(database_path)
+
+    conn = sqlite3.connect(database_path)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    for table in (
+        "canonical_membership_actions",
+        "reconciliation_decisions",
+        "canonical_event_members",
+        "canonical_events",
+    ):
+        conn.execute(f'DROP TABLE "{table}"')
+    conn.execute("PRAGMA user_version = 1")
+    conn.commit()
+    conn.close()
+
+    result = evaluate_reconciliation(database_path)
+
+    assert result["status"] == "no_reviewed_pairs"
+    assert result["database_version"] == 1
+    conn = sqlite3.connect(database_path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type='table' AND name='reconciliation_decisions'"
+    ).fetchone()[0] == 0
+    conn.close()
 
 
 def test_evaluation_uses_historical_revisions_and_reports_threshold_tradeoff(tmp_path):
