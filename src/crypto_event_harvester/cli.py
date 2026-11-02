@@ -118,6 +118,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     candidates.add_argument("--output", type=Path, help="Optional JSON report path")
 
+    reconcile = subcommands.add_parser(
+        "reconcile", help="Review cross-provider candidate identities"
+    )
+    reconcile.add_argument("--db", required=True, type=Path)
+    reconcile.add_argument(
+        "--action", choices=("status", "pending", "list", "history", "accept", "reject"), required=True
+    )
+    reconcile.add_argument("--strategy", choices=("exact", "similarity"))
+    reconcile.add_argument("--min-score", type=float, default=0.80)
+    reconcile.add_argument("--left-event-id")
+    reconcile.add_argument("--right-event-id")
+    reconcile.add_argument("--event-id")
+    reconcile.add_argument("--note")
+    reconcile.add_argument("--limit", type=int, default=100)
+
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
     store.add_argument("--action", choices=("status", "list", "history"), default="status")
@@ -345,6 +360,54 @@ def _store(args) -> int:
         return 2
 
 
+def _reconcile(args) -> int:
+    from .reconciliation import (
+        canonical_list,
+        decision_history,
+        pending_candidates,
+        reconcile_pair,
+        reconciliation_status,
+    )
+
+    try:
+        if args.action in {"accept", "reject"}:
+            if not args.left_event_id or not args.right_event_id or not args.strategy:
+                raise ValueError("accept/reject require both event IDs and an explicit strategy")
+            result = reconcile_pair(
+                args.db, left_event_id=args.left_event_id, right_event_id=args.right_event_id,
+                strategy=args.strategy, decision="accepted" if args.action == "accept" else "rejected",
+                min_score=args.min_score, note=args.note,
+            )
+        elif args.action == "status":
+            result = reconciliation_status(args.db)
+        elif args.action == "pending":
+            result = pending_candidates(
+                args.db, strategy=args.strategy or "similarity",
+                min_score=args.min_score, limit=args.limit,
+            )
+        elif args.action == "list":
+            result = canonical_list(args.db, limit=args.limit)
+        else:
+            result = decision_history(args.db, event_id=args.event_id, limit=args.limit)
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    except (OSError, ValueError, RuntimeError, sqlite3.DatabaseError) as exc:
+        message = str(exc)
+        print(
+            json.dumps(
+                {
+                    "status": "conflict" if message.startswith("conflict:") else "error",
+                    "action": args.action,
+                    "error": message,
+                    "conflict": message if message.startswith("conflict:") else None,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 2
+
+
 def _audit(args) -> int:
     from .pilot_evaluation import audit_source, compare_audits
 
@@ -436,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
         return _candidates(args)
     if args.command == "store":
         return _store(args)
+    if args.command == "reconcile":
+        return _reconcile(args)
     if args.command == "backfill":
         return _backfill(args)
     if args.command == "sources":

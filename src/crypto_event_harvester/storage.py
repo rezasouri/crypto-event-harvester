@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .normalization import UnifiedEvent
 
-DB_VERSION = 1
+DB_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -39,6 +39,68 @@ CREATE TABLE IF NOT EXISTS event_revisions (
     payload_json TEXT NOT NULL,
     PRIMARY KEY (event_id, revision)
 );
+"""
+
+_RECONCILIATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS canonical_events (
+    canonical_event_id TEXT PRIMARY KEY,
+    created_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS canonical_event_members (
+    canonical_event_id TEXT NOT NULL REFERENCES canonical_events(canonical_event_id),
+    event_id TEXT NOT NULL UNIQUE REFERENCES events(event_id),
+    source_revision_at_link INTEGER NOT NULL CHECK (source_revision_at_link >= 1),
+    linked_at_utc TEXT NOT NULL,
+    PRIMARY KEY (canonical_event_id, event_id)
+);
+CREATE INDEX IF NOT EXISTS ix_canonical_members_canonical
+    ON canonical_event_members(canonical_event_id);
+CREATE TRIGGER IF NOT EXISTS trg_canonical_member_provider
+BEFORE INSERT ON canonical_event_members
+WHEN EXISTS (
+    SELECT 1 FROM canonical_event_members old
+    JOIN events old_event ON old_event.event_id = old.event_id
+    JOIN events new_event ON new_event.event_id = NEW.event_id
+    WHERE old.canonical_event_id = NEW.canonical_event_id
+      AND old_event.provider = new_event.provider
+)
+BEGIN
+    SELECT RAISE(ABORT, 'canonical identity already has a member from this provider');
+END;
+CREATE TABLE IF NOT EXISTS reconciliation_decisions (
+    decision_id TEXT PRIMARY KEY,
+    left_event_id TEXT NOT NULL,
+    right_event_id TEXT NOT NULL,
+    left_revision INTEGER NOT NULL CHECK (left_revision >= 1),
+    right_revision INTEGER NOT NULL CHECK (right_revision >= 1),
+    decision TEXT NOT NULL CHECK (decision IN ('accepted', 'rejected')),
+    strategy TEXT NOT NULL CHECK (strategy IN ('exact', 'similarity')),
+    evidence_json TEXT NOT NULL,
+    canonical_event_id TEXT REFERENCES canonical_events(canonical_event_id),
+    note TEXT,
+    decided_at_utc TEXT NOT NULL,
+    CHECK (left_event_id < right_event_id),
+    CHECK ((decision = 'accepted' AND canonical_event_id IS NOT NULL)
+        OR (decision = 'rejected' AND canonical_event_id IS NULL)),
+    FOREIGN KEY (left_event_id, left_revision) REFERENCES event_revisions(event_id, revision),
+    FOREIGN KEY (right_event_id, right_revision) REFERENCES event_revisions(event_id, revision),
+    UNIQUE (left_event_id, right_event_id, left_revision, right_revision, decision, strategy)
+);
+CREATE INDEX IF NOT EXISTS ix_reconciliation_decisions_left
+    ON reconciliation_decisions(left_event_id, decided_at_utc);
+CREATE INDEX IF NOT EXISTS ix_reconciliation_decisions_right
+    ON reconciliation_decisions(right_event_id, decided_at_utc);
+CREATE TRIGGER IF NOT EXISTS trg_reconciliation_decisions_no_update
+BEFORE UPDATE ON reconciliation_decisions
+BEGIN
+    SELECT RAISE(ABORT, 'reconciliation decisions are append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_reconciliation_decisions_no_delete
+BEFORE DELETE ON reconciliation_decisions
+BEGIN
+    SELECT RAISE(ABORT, 'reconciliation decisions are append-only');
+END;
 """
 
 
@@ -87,13 +149,19 @@ def _connect(path: Path, *, create: bool) -> sqlite3.Connection:
     if create:
         conn.execute("PRAGMA journal_mode = WAL")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, DB_VERSION):
+        if version not in (0, 1, DB_VERSION):
             conn.close()
             raise RuntimeError(f"unsupported event database version: {version}")
         if version == 0:
-            with conn:
-                conn.executescript(_SCHEMA)
-                conn.execute(f"PRAGMA user_version = {DB_VERSION}")
+            conn.executescript(
+                "BEGIN IMMEDIATE;\n" + _SCHEMA + _RECONCILIATION_SCHEMA
+                + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
+            )
+        elif version == 1:
+            conn.executescript(
+                "BEGIN IMMEDIATE;\n" + _RECONCILIATION_SCHEMA
+                + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
+            )
     return conn
 
 
