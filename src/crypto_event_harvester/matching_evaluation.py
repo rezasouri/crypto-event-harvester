@@ -74,33 +74,48 @@ def evaluate_reconciliation(
 
     conn = _connect(Path(database_path), create=False)
     try:
-        rows = conn.execute(
-            """
-            SELECT
-                d.left_event_id,
-                d.right_event_id,
-                d.left_revision,
-                d.right_revision,
-                d.decision,
-                d.strategy,
-                left_revision.payload_json AS left_payload_json,
-                right_revision.payload_json AS right_payload_json
-            FROM reconciliation_decisions AS d
-            JOIN event_revisions AS left_revision
-              ON left_revision.event_id = d.left_event_id
-             AND left_revision.revision = d.left_revision
-            JOIN event_revisions AS right_revision
-              ON right_revision.event_id = d.right_event_id
-             AND right_revision.revision = d.right_revision
-            ORDER BY
-                d.left_event_id,
-                d.left_revision,
-                d.right_event_id,
-                d.right_revision,
-                d.decided_at_utc,
-                d.decision_id
-            """
-        ).fetchall()
+        conn.execute("PRAGMA query_only = ON")
+        database_version = conn.execute("PRAGMA user_version").fetchone()[0]
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if "reconciliation_decisions" not in tables:
+            if database_version >= 2:
+                raise RuntimeError(
+                    "database schema declares reconciliation support but its decision table is missing"
+                )
+            rows = []
+        else:
+            rows = conn.execute(
+                """
+                SELECT
+                    d.left_event_id,
+                    d.right_event_id,
+                    d.left_revision,
+                    d.right_revision,
+                    d.decision,
+                    d.strategy,
+                    left_revision.payload_json AS left_payload_json,
+                    right_revision.payload_json AS right_payload_json
+                FROM reconciliation_decisions AS d
+                JOIN event_revisions AS left_revision
+                  ON left_revision.event_id = d.left_event_id
+                 AND left_revision.revision = d.left_revision
+                JOIN event_revisions AS right_revision
+                  ON right_revision.event_id = d.right_event_id
+                 AND right_revision.revision = d.right_revision
+                ORDER BY
+                    d.left_event_id,
+                    d.left_revision,
+                    d.right_event_id,
+                    d.right_revision,
+                    d.decided_at_utc,
+                    d.decision_id
+                """
+            ).fetchall()
     finally:
         conn.close()
 
@@ -176,6 +191,7 @@ def evaluate_reconciliation(
 
     return {
         "status": status,
+        "database_version": database_version,
         "evaluation_scope": "historically_reviewed_event_revision_pairs_only",
         "reviewed_pair_count": reviewed_count,
         "accepted_label_count": accepted_count,
