@@ -10,6 +10,7 @@ import csv
 import hashlib
 import json
 import math
+import sqlite3
 from pathlib import Path
 
 from .cross_provider_candidates import match_candidates, match_similar_candidates
@@ -207,6 +208,8 @@ def export_review_dataset(
         limit=limit,
     )
     path = Path(output_path)
+    if path.resolve() == Path(database_path).resolve():
+        raise ValueError("review CSV output must not overwrite the SQLite database")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, extrasaction="ignore")
@@ -285,6 +288,8 @@ def _normalize_decision(value: str | None) -> str | None:
 
 def _load_review_rows(input_path: str | Path) -> list[dict]:
     path = Path(input_path)
+    if path.resolve() == Path(database_path).resolve():
+        raise ValueError("review CSV input must be separate from the SQLite database")
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         headers = set(reader.fieldnames or ())
@@ -428,7 +433,7 @@ def import_review_dataset(
                         "evidence": validation["evidence"],
                     }
                 )
-        except (OSError, ValueError, RuntimeError) as exc:
+        except (OSError, ValueError, RuntimeError, sqlite3.DatabaseError) as exc:
             message = str(exc)
             if message.startswith("stale review candidate:"):
                 stale += 1
