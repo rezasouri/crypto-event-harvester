@@ -7,6 +7,7 @@ not estimates of recall over all possible event pairs or the full calendar.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from pathlib import Path
 
@@ -66,8 +67,11 @@ def evaluate_reconciliation(
     normalized_thresholds = sorted({float(value) for value in thresholds})
     if not normalized_thresholds:
         raise ValueError("at least one similarity threshold is required")
-    if any(value < 0.0 or value > 1.0 for value in normalized_thresholds):
-        raise ValueError("similarity thresholds must be between 0 and 1")
+    if any(
+        not math.isfinite(value) or value < 0.0 or value > 1.0
+        for value in normalized_thresholds
+    ):
+        raise ValueError("similarity thresholds must be finite values between 0 and 1")
 
     conn = _connect(Path(database_path), create=False)
     try:
