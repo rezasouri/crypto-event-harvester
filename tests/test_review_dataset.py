@@ -12,6 +12,7 @@ from crypto_event_harvester.normalization import normalize_event
 from crypto_event_harvester.providers.coindar import parse_listing as parse_coindar
 from crypto_event_harvester.providers.cryptoevents import parse_listing as parse_cryptoevents
 from crypto_event_harvester.providers.icodrops import parse_listing as parse_icodrops
+from crypto_event_harvester.reconciliation import reconcile_pair
 from crypto_event_harvester.review_dataset import (
     _candidate_id,
     export_review_dataset,
@@ -146,6 +147,38 @@ def test_dry_run_then_apply_records_human_labels_for_gate17_evaluation(tmp_path)
     assert evaluation["reviewed_pair_count"] == 2
     assert evaluation["accepted_label_count"] == 1
     assert evaluation["rejected_label_count"] == 1
+
+
+def test_dry_run_reports_existing_opposite_decision(tmp_path):
+    database_path = tmp_path / "events.sqlite"
+    output_path = tmp_path / "review.csv"
+    _seed(database_path)
+    export_review_dataset(
+        database_path, output_path, strategy="similarity", min_score=0.70, limit=20
+    )
+    rows = _read_csv(output_path)
+    row = rows[0]
+    row["review_decision"] = "reject"
+    _write_csv(output_path, [row])
+
+    reconcile_pair(
+        database_path,
+        left_event_id=row["left_event_id"],
+        right_event_id=row["right_event_id"],
+        strategy="similarity",
+        decision="accepted",
+        min_score=0.70,
+    )
+    preview = import_review_dataset(database_path, output_path)
+
+    assert preview["status"] == "validation_errors"
+    assert preview["conflict_count"] == 1
+    assert preview["rows"][0]["status"] == "conflict"
+    conn = sqlite3.connect(database_path)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM reconciliation_decisions"
+    ).fetchone()[0] == 1
+    conn.close()
 
 
 def test_import_skips_unsure_rows_without_migrating_or_writing(tmp_path):
