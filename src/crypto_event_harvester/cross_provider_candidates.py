@@ -311,6 +311,69 @@ def _similarity_evidence(left: dict, right: dict) -> dict | None:
     }
 
 
+
+def build_review_assessment(
+    left: dict,
+    right: dict,
+    evidence: dict,
+) -> dict:
+    """Build an explainable, review-only assessment for a candidate pair."""
+
+    supporting_signals = []
+    caution_flags = []
+
+    title_score = float(evidence.get("title_similarity", 0.0))
+
+    # Title similarity assessment
+    if title_score >= 0.95:
+        supporting_signals.append("very_high_title_similarity")
+    elif title_score >= 0.85:
+        supporting_signals.append("high_title_similarity")
+    else:
+        caution_flags.append("moderate_title_similarity")
+
+    # Project and ticker corroboration
+    for field in ("project", "ticker"):
+        left_value = _canonical(left.get(field))
+        right_value = _canonical(right.get(field))
+
+        if left_value and right_value:
+            if left_value == right_value:
+                supporting_signals.append(f"{field}_matches")
+            else:
+                caution_flags.append(f"{field}_conflict")
+        else:
+            caution_flags.append(f"{field}_not_fully_verified")
+
+    # Date relationship
+    date_relation = evidence.get("date_relation")
+
+    if date_relation == "exact_range":
+        supporting_signals.append("exact_date_range_match")
+    elif date_relation in {"same_start", "same_end"}:
+        caution_flags.append("partial_date_boundary_match")
+    elif date_relation in {
+        "left_contains_right",
+        "right_contains_left",
+        "partial_overlap",
+    }:
+        caution_flags.append("date_ranges_only_overlap")
+    else:
+        caution_flags.append("date_relationship_uncertain")
+
+    # Matching strategy
+    if evidence.get("threshold_path") == "title_only_strict":
+        caution_flags.append("no_shared_project_or_ticker_corroboration")
+
+    return {
+        "status": "manual_review_required",
+        "supporting_signals": sorted(set(supporting_signals)),
+        "caution_flags": sorted(set(caution_flags)),
+        "automatic_merge_allowed": False,
+    }
+
+
+
 def match_similar_candidates(
     database_path: str | Path, *, limit: int = 100, min_score: float = 0.80
 ) -> SimilarityResult:
@@ -380,6 +443,9 @@ def match_similar_candidates(
                 "evidence": evidence,
                 "left": _evidence(left, left_revision),
                 "right": _evidence(right, right_revision),
+                "review_assessment": build_review_assessment(
+                    left, right, evidence
+                ),
             }
             # Keep the highest-scoring bounded result set without retaining
             # every pair in memory. Earlier pairs win exact score ties.
