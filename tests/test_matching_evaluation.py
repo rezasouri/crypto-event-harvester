@@ -155,12 +155,13 @@ def test_evaluation_rejects_invalid_thresholds(tmp_path):
     database_path = tmp_path / "events.sqlite"
     _seed(database_path)
 
-    try:
-        evaluate_reconciliation(database_path, thresholds=[0.8, 1.1])
-    except ValueError as exc:
-        assert "between 0 and 1" in str(exc)
-    else:
-        raise AssertionError("invalid threshold should fail")
+    for thresholds in ([0.8, 1.1], [0.8, float("nan")]):
+        try:
+            evaluate_reconciliation(database_path, thresholds=thresholds)
+        except ValueError as exc:
+            assert "thresholds must be finite" in str(exc)
+        else:
+            raise AssertionError("invalid threshold should fail")
 
 
 def test_reconcile_evaluate_cli_emits_json(tmp_path, capsys):
