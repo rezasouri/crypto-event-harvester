@@ -286,7 +286,11 @@ def _normalize_decision(value: str | None) -> str | None:
     raise ValueError("review_decision must be accept, reject, unsure or blank")
 
 
-def _load_review_rows(input_path: str | Path) -> list[dict]:
+def _load_review_rows(
+    input_path: str | Path,
+    *,
+    database_path: str | Path,
+) -> list[dict]:
     path = Path(input_path)
     if path.resolve() == Path(database_path).resolve():
         raise ValueError("review CSV input must be separate from the SQLite database")
@@ -373,7 +377,7 @@ def import_review_dataset(
     apply: bool = False,
 ) -> dict:
     """Validate or apply human labels; dry-run is the default and never migrates."""
-    rows = _load_review_rows(input_path)
+    rows = _load_review_rows(input_path, database_path=database_path)
     results = []
     validated = 0
     applied = 0
