@@ -483,7 +483,7 @@ def _reconcile(args) -> int:
             )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
-    except (OSError, ValueError, RuntimeError, sqlite3.DatabaseError) as exc:
+    except (OSError, ValueError, RuntimeError, csv.Error, sqlite3.DatabaseError) as exc:
         message = str(exc)
         print(
             json.dumps(
