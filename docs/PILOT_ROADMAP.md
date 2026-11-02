@@ -82,3 +82,14 @@ score-ranked review candidates. Scores are not probabilities and never
 trigger automatic merges. It reads the current SQLite snapshots only; no
 network requests or paid services are involved. See
 [CROSS_PROVIDER_CANDIDATES.md](CROSS_PROVIDER_CANDIDATES.md).
+
+
+## Gate 15 status — manual cross-provider reconciliation
+
+SQLite schema version 2 adds canonical identity memberships and an
+append-only human decision history. The `reconcile` command offers status,
+pending, list, history, accept and reject actions. Decisions are revalidated
+against current database snapshots and revisions inside a transaction.
+Conflicting canonical identities are never merged, and provider-specific
+events, IDs and revision histories remain unchanged. See
+[manual reconciliation](CROSS_PROVIDER_CANDIDATES.md).

@@ -104,7 +104,12 @@ class MatchResult:
         }
 
 
-def match_candidates(database_path: str | Path, *, limit: int = 100) -> MatchResult:
+def match_candidates(
+    database_path: str | Path,
+    *,
+    limit: int = 100,
+    excluded_pairs: set[tuple[str, int, str, int]] | None = None,
+) -> MatchResult:
     """Deterministically compare current stored source snapshots only.
 
     Exact day/range equality and a conservatively canonicalized title are
@@ -143,6 +148,9 @@ def match_candidates(database_path: str | Path, *, limit: int = 100) -> MatchRes
         for i, (left, rev_left) in enumerate(group):
             for right, rev_right in group[i + 1:]:
                 if not _compatible(left, right):
+                    continue
+                pair = (left["event_id"], rev_left, right["event_id"], rev_right)
+                if excluded_pairs and pair in excluded_pairs:
                     continue
                 total += 1
                 if len(candidates) < limit:
@@ -375,7 +383,11 @@ def build_review_assessment(
 
 
 def match_similar_candidates(
-    database_path: str | Path, *, limit: int = 100, min_score: float = 0.80
+    database_path: str | Path,
+    *,
+    limit: int = 100,
+    min_score: float = 0.80,
+    excluded_pairs: set[tuple[str, int, str, int]] | None = None,
 ) -> SimilarityResult:
     """Find fuzzy cross-provider candidates from current snapshots, offline.
 
@@ -431,6 +443,13 @@ def match_similar_candidates(
             pairs_examined += 1
             evidence = _similarity_evidence(left, right)
             if evidence is None or evidence["score"] < min_score:
+                continue
+            pair = (
+                (left["event_id"], left_revision, right["event_id"], right_revision)
+                if left["event_id"] < right["event_id"]
+                else (right["event_id"], right_revision, left["event_id"], left_revision)
+            )
+            if excluded_pairs and pair in excluded_pairs:
                 continue
             total += 1
             candidate = {
