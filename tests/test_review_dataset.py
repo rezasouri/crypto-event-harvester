@@ -140,6 +140,24 @@ def test_dry_run_then_apply_records_human_labels_for_gate17_evaluation(tmp_path)
     assert applied["idempotent_count"] == 0
     assert applied["source_events_modified"] == 0
 
+    repeated = import_review_dataset(database_path, output_path, apply=True)
+    assert repeated["status"] == "applied"
+    assert repeated["applied_count"] == 2
+    assert repeated["idempotent_count"] == 2
+
+    next_batch = tmp_path / "next-review.csv"
+    next_export = export_review_dataset(
+        database_path,
+        next_batch,
+        strategy="similarity",
+        min_score=0.70,
+        limit=20,
+    )
+    next_ids = {row["candidate_id"] for row in _read_csv(next_batch)}
+    assert rows[0]["candidate_id"] not in next_ids
+    assert rows[1]["candidate_id"] not in next_ids
+    assert next_export["candidates_total"] == len(next_ids)
+
     evaluation = evaluate_reconciliation(
         database_path, thresholds=[0.70, 0.90], min_reviewed_pairs=2
     )
