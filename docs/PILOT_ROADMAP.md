@@ -113,3 +113,15 @@ to a new identity and leaves at least one source member. The
 `membership-history` action exposes the lifecycle audit trail. Source event
 snapshots and immutable revisions remain untouched. SQLite schema version 2
 migrates additively to version 3.
+
+## Gate 17 status — retrospective matching-quality evaluation
+
+Adds a read-only `reconcile --action evaluate` report over human-reviewed
+source-event revision pairs. It evaluates exact matching and sweeps
+similarity thresholds using the immutable event revisions referenced by
+the append-only decision log. Metrics are explicitly limited to reviewed
+pairs; unreviewed pairs have no labels, so population recall is not claimed.
+A configurable minimum sample size controls the report status, and an empty
+decision history returns `no_reviewed_pairs` rather than fabricated metrics.
+No network requests, database writes, schema migration or automatic merge
+are introduced.

@@ -228,3 +228,45 @@ updated or deleted. Status reports unlink/split action counts and retained
 empty identities. Schema version 2 databases migrate additively to version 3,
 preserving existing canonical memberships, decisions, source events and
 revision history.
+
+## Gate 17 — retrospective matching-quality evaluation
+
+Gate 17 adds a read-only evaluation report over source-event revision pairs
+that a human has already accepted or rejected. It evaluates the exact matcher
+and sweeps configurable similarity thresholds without changing the matcher,
+canonical identities, source snapshots or decision history.
+
+Run the report:
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action evaluate
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action evaluate \
+  --thresholds 0.75 0.80 0.85 0.90 0.95 --min-reviewed-pairs 30
+```
+
+The evaluator loads the immutable `event_revisions` payloads referenced by
+each human decision. A later source update therefore cannot silently change
+the evidence used for a historical evaluation. Repeated reviews of the same
+event pair and revision pair are counted once; contradictory labels fail
+closed.
+
+The report includes reviewed-pair counts, accepted/rejected labels, exact
+strategy metrics, similarity threshold confusion matrices, precision, recall,
+F1, specificity, accuracy, provider-pair coverage and similarity-score
+coverage. The default minimum of 30 reviewed pairs is a reporting status
+guard, not a claim that 30 examples are statistically sufficient.
+
+### Interpretation and limits
+
+- Metrics apply only to historically reviewed event-revision pairs. They do
+  **not** estimate recall over every possible or unreviewed cross-provider pair.
+- Reviewed pairs are selected by earlier candidate-generation rules, so the
+  sample is not random and may contain selection bias.
+- Human accept/reject decisions are treated as labels; inter-reviewer
+  agreement and independent source verification are not measured.
+- Similarity scores are ranking evidence, not probabilities or calibrated
+  confidence.
+- With no human decisions, the command returns `status=no_reviewed_pairs`
+  and null ratio metrics. It does not fabricate a benchmark.
+- The operation is offline and read-only: zero source requests, no database
+  writes, no automatic merges and no schema migration.
