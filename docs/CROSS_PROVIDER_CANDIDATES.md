@@ -270,3 +270,77 @@ guard, not a claim that 30 examples are statistically sufficient.
   and null ratio metrics. It does not fabricate a benchmark.
 - The operation is offline and read-only: zero source requests, no database
   writes, no automatic merges and no schema migration.
+
+## Gate 18 — human review dataset workflow
+
+Gate 18 turns the review-only candidate list into an auditable labeling loop
+for the Gate 17 quality evaluator. It adds CSV export and import without a
+new database table or schema migration.
+
+### Export a review batch
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite \
+  --action review-export --strategy similarity --min-score 0.80 \
+  --limit 100 --output artifacts/reconciliation-review.csv
+```
+
+The UTF-8 CSV contains a deterministic candidate ID, both provider event IDs,
+the exact source revision numbers, titles, dates, project/ticker metadata,
+source URLs, score/evidence and blank `review_decision` / `review_note`
+columns. Reviewers should fill `review_decision` with `accept`, `reject`,
+or `unsure` and may add a short explanation in `review_note`. Blank and
+unsure rows are skipped. Export is read-only, makes zero source requests and
+does not migrate a version 1 database.
+
+The export is a bounded candidate pool, not a random or population-
+representative sample. `candidates_total` and `truncated` make any limit
+visible. Similarity scores are prioritization evidence, not probabilities.
+
+### Validate and import labels
+
+First validate the edited CSV without writing anything:
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite \
+  --action review-import --input artifacts/reconciliation-review.csv
+```
+
+Only after reviewing the dry-run report, explicitly persist decisions:
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite \
+  --action review-import --input artifacts/reconciliation-review.csv --apply
+```
+
+Import checks the deterministic candidate ID, rejects duplicate IDs and
+contradictory labels for the same source revision pair, and revalidates the
+pair using the selected matching strategy. Most importantly, it checks both
+exported revision numbers again inside the write transaction. If either
+source event changed after export, that row is reported as stale and is not
+applied. A conflict or stale row does not silently change its label; other
+independent valid rows can still be processed and are reported individually.
+Re-importing an already recorded identical decision is idempotent.
+
+The CSV's descriptive fields are for reviewer context only. Import does not
+trust edited titles, dates, provider labels, scores or evidence JSON: it
+re-reads the authoritative current event snapshots and recomputes evidence.
+The candidate ID detects accidental row/pair edits; it is not an authorization
+or cryptographic signature.
+
+Accepted rows use the existing manual reconciliation transaction and can
+create/update canonical memberships. Rejected rows add audit-only decisions.
+Neither outcome rewrites source event records or immutable revisions.
+The apply operation may perform the existing additive schema migration when
+run against an older database; dry-run validation does not migrate.
+
+After importing enough labels, run the Gate 17 report:
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action evaluate
+```
+
+Metrics remain scoped to reviewed candidate pairs. Candidate-generation
+selection bias and the absence of labels for unreviewed pairs still prevent
+population-recall claims. Human review quality and reviewer agreement are
+not inferred from the CSV itself.
