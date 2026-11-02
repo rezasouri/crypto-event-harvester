@@ -13,6 +13,7 @@ from crypto_event_harvester.providers.coindar import parse_listing as parse_coin
 from crypto_event_harvester.providers.cryptoevents import parse_listing as parse_cryptoevents
 from crypto_event_harvester.providers.icodrops import parse_listing as parse_icodrops
 from crypto_event_harvester.review_dataset import (
+    _candidate_id,
     export_review_dataset,
     import_review_dataset,
 )
@@ -203,7 +204,9 @@ def test_stale_exported_revision_is_never_applied(tmp_path):
     rows[0]["review_decision"] = "accept"
     _write_csv(output_path, rows[:1])
 
-    changed = replace(events[0], description="A later source revision")
+    reviewed_event_id = rows[0]["left_event_id"]
+    reviewed_event = next(event for event in events if event.event_id == reviewed_event_id)
+    changed = replace(reviewed_event, description="A later source revision")
     sync_events(
         database_path,
         [changed],
@@ -235,6 +238,16 @@ def test_import_rejects_conflicting_labels_for_same_revision_pair(tmp_path):
     rows[1]["right_event_id"] = rows[0]["right_event_id"]
     rows[1]["left_revision"] = rows[0]["left_revision"]
     rows[1]["right_revision"] = rows[0]["right_revision"]
+    rows[1]["strategy"] = "exact"
+    rows[1]["min_score"] = ""
+    rows[1]["candidate_id"] = _candidate_id(
+        rows[1]["left_event_id"],
+        int(rows[1]["left_revision"]),
+        rows[1]["right_event_id"],
+        int(rows[1]["right_revision"]),
+        strategy="exact",
+        min_score=0.80,
+    )
     rows[1]["review_decision"] = "reject"
     _write_csv(output_path, rows[:2])
 
