@@ -104,6 +104,7 @@ def validate_reconciliation_pair(
     left_event_id: str,
     right_event_id: str,
     strategy: str,
+    decision: str | None = None,
     min_score: float = 0.80,
     expected_revisions: dict[str, int] | None = None,
 ) -> dict:
@@ -123,6 +124,90 @@ def validate_reconciliation_pair(
             expected_revisions,
         )
         evidence = _match(left, right, strategy, min_score)
+        idempotent = False
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+        if decision is not None:
+            if decision not in {"accepted", "rejected"}:
+                raise ValueError("decision must be accepted or rejected")
+            if "reconciliation_decisions" in tables:
+                opposite = conn.execute(
+                    "SELECT decision, strategy FROM reconciliation_decisions "
+                    "WHERE left_event_id=? AND right_event_id=? "
+                    "AND left_revision=? AND right_revision=? AND decision<>? "
+                    "ORDER BY decided_at_utc, decision_id LIMIT 1",
+                    (
+                        left["event_id"],
+                        right["event_id"],
+                        left_revision,
+                        right_revision,
+                        decision,
+                    ),
+                ).fetchone()
+                if opposite is not None:
+                    raise ValueError(
+                        "conflict: opposite decision already exists for this event pair "
+                        f"and source revisions ({opposite['decision']} via {opposite['strategy']})"
+                    )
+                old = conn.execute(
+                    "SELECT decision_id FROM reconciliation_decisions "
+                    "WHERE left_event_id=? AND right_event_id=? "
+                    "AND left_revision=? AND right_revision=? AND decision=? AND strategy=?",
+                    (
+                        left["event_id"],
+                        right["event_id"],
+                        left_revision,
+                        right_revision,
+                        decision,
+                        strategy,
+                    ),
+                ).fetchone()
+                idempotent = old is not None
+            if decision == "accepted" and not idempotent and {
+                "canonical_event_members",
+                "canonical_events",
+            } <= tables:
+                memberships = conn.execute(
+                    "SELECT m.event_id, m.canonical_event_id, e.provider "
+                    "FROM canonical_event_members m JOIN events e USING(event_id) "
+                    "WHERE m.event_id IN (?, ?)",
+                    (left["event_id"], right["event_id"]),
+                ).fetchall()
+                by_event = {row["event_id"]: row for row in memberships}
+                left_member = by_event.get(left["event_id"])
+                right_member = by_event.get(right["event_id"])
+                if (
+                    left_member
+                    and right_member
+                    and left_member["canonical_event_id"] != right_member["canonical_event_id"]
+                ):
+                    raise ValueError("conflict: events belong to different canonical identities")
+                canonical_id = (
+                    left_member or right_member
+                )
+                if canonical_id is not None:
+                    collision = conn.execute(
+                        "SELECT m.event_id FROM canonical_event_members m "
+                        "JOIN events e USING(event_id) "
+                        "WHERE m.canonical_event_id=? AND e.provider IN (?, ?) "
+                        "AND m.event_id NOT IN (?, ?) LIMIT 1",
+                        (
+                            canonical_id["canonical_event_id"],
+                            left["provider"],
+                            right["provider"],
+                            left["event_id"],
+                            right["event_id"],
+                        ),
+                    ).fetchone()
+                    if collision is not None:
+                        raise ValueError(
+                            "conflict: canonical identity already contains provider member "
+                            f"{collision['event_id']}"
+                        )
         return {
             "source_revisions": {
                 left["event_id"]: left_revision,
@@ -130,6 +215,7 @@ def validate_reconciliation_pair(
             },
             "strategy": strategy,
             "evidence": evidence,
+            "idempotent": idempotent,
             "database_rows_modified": 0,
         }
     finally:
