@@ -270,8 +270,10 @@ def test_stale_exported_revision_is_never_applied(tmp_path):
     assert result["applied_count"] == 0
     assert result["rows"][0]["status"] == "stale"
     conn = sqlite3.connect(database_path)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
     assert conn.execute(
-        "SELECT COUNT(*) FROM reconciliation_decisions"
+        "SELECT COUNT(*) FROM sqlite_master "
+        "WHERE type='table' AND name='reconciliation_decisions'"
     ).fetchone()[0] == 0
     conn.close()
 
