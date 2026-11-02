@@ -225,6 +225,17 @@ def reconciliation_status(database_path: str | Path) -> dict:
                 "JOIN events e USING(event_id) "
                 "WHERE m.source_revision_at_link <> e.revision"
             ).fetchone()[0],
+            "empty_canonical_events": conn.execute(
+                "SELECT COUNT(*) FROM canonical_events c "
+                "WHERE NOT EXISTS (SELECT 1 FROM canonical_event_members m "
+                "WHERE m.canonical_event_id = c.canonical_event_id)"
+            ).fetchone()[0],
+            "unlinked_actions": conn.execute(
+                "SELECT COUNT(*) FROM canonical_membership_actions WHERE action='unlinked'"
+            ).fetchone()[0],
+            "split_actions": conn.execute(
+                "SELECT COUNT(*) FROM canonical_membership_actions WHERE action='split'"
+            ).fetchone()[0],
         }
     finally:
         conn.close()
@@ -329,7 +340,218 @@ def canonical_list(database_path: str | Path, *, limit: int = 100) -> list[dict]
                         "event": json.loads(row["payload_json"]),
                     }
                 )
+        for item in result.values():
+            item["member_count"] = len(item["members"])
+            item["lifecycle_status"] = "active" if item["members"] else "empty"
         return list(result.values())[:limit]
+    finally:
+        conn.close()
+
+
+def unlink_member(
+    database_path: str | Path,
+    *,
+    canonical_event_id: str,
+    event_id: str,
+    note: str | None = None,
+) -> dict:
+    """Remove one canonical membership while preserving an immutable audit record."""
+    if not canonical_event_id or not event_id:
+        raise ValueError("unlink requires a canonical identity ID and an event ID")
+    conn = _open(database_path)
+    try:
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            identity = conn.execute(
+                "SELECT canonical_event_id FROM canonical_events WHERE canonical_event_id=?",
+                (canonical_event_id,),
+            ).fetchone()
+            if identity is None:
+                raise ValueError(f"unknown canonical identity: {canonical_event_id}")
+            member = conn.execute(
+                "SELECT m.source_revision_at_link, m.linked_at_utc, e.revision "
+                "FROM canonical_event_members m JOIN events e USING(event_id) "
+                "WHERE m.canonical_event_id=? AND m.event_id=?",
+                (canonical_event_id, event_id),
+            ).fetchone()
+            if member is None:
+                raise ValueError(
+                    f"event {event_id} is not a member of canonical identity {canonical_event_id}"
+                )
+
+            operation_id = f"membership-operation:{uuid.uuid4()}"
+            action_id = f"membership-action:{uuid.uuid4()}"
+            now = _now()
+            conn.execute(
+                "INSERT INTO canonical_membership_actions "
+                "VALUES (?, ?, 'unlinked', ?, NULL, ?, ?, ?, ?, ?, ?)",
+                (
+                    action_id,
+                    operation_id,
+                    canonical_event_id,
+                    event_id,
+                    member["source_revision_at_link"],
+                    member["revision"],
+                    member["linked_at_utc"],
+                    note,
+                    now,
+                ),
+            )
+            conn.execute(
+                "DELETE FROM canonical_event_members WHERE canonical_event_id=? AND event_id=?",
+                (canonical_event_id, event_id),
+            )
+            conn.execute(
+                "UPDATE canonical_events SET updated_at_utc=? WHERE canonical_event_id=?",
+                (now, canonical_event_id),
+            )
+            return {
+                "status": "unlinked",
+                "operation_id": operation_id,
+                "action_id": action_id,
+                "canonical_event_id": canonical_event_id,
+                "event_id": event_id,
+                "source_revision_at_link": member["source_revision_at_link"],
+                "current_source_revision": member["revision"],
+                "identity_retained": True,
+                "note": note,
+                "acted_at_utc": now,
+            }
+    finally:
+        conn.close()
+
+
+def split_canonical_identity(
+    database_path: str | Path,
+    *,
+    canonical_event_id: str,
+    event_ids: list[str],
+    note: str | None = None,
+) -> dict:
+    """Move a proper subset of members into a new identity, with one audit row per member."""
+    if not canonical_event_id:
+        raise ValueError("split requires a canonical identity ID")
+    if not event_ids:
+        raise ValueError("split requires at least one member event ID")
+    if any(not item for item in event_ids):
+        raise ValueError("split event IDs must be non-empty")
+    if len(set(event_ids)) != len(event_ids):
+        raise ValueError("split event IDs must be unique")
+
+    conn = _open(database_path)
+    try:
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            identity = conn.execute(
+                "SELECT canonical_event_id FROM canonical_events WHERE canonical_event_id=?",
+                (canonical_event_id,),
+            ).fetchone()
+            if identity is None:
+                raise ValueError(f"unknown canonical identity: {canonical_event_id}")
+            members = conn.execute(
+                "SELECT m.event_id, m.source_revision_at_link, m.linked_at_utc, e.revision "
+                "FROM canonical_event_members m JOIN events e USING(event_id) "
+                "WHERE m.canonical_event_id=? ORDER BY m.event_id",
+                (canonical_event_id,),
+            ).fetchall()
+            by_event = {row["event_id"]: row for row in members}
+            missing = sorted(set(event_ids) - set(by_event))
+            if missing:
+                raise ValueError(
+                    f"event ID(s) are not members of canonical identity {canonical_event_id}: "
+                    + ", ".join(missing)
+                )
+            if len(event_ids) >= len(members):
+                raise ValueError("split must move a proper subset and leave at least one source member")
+
+            new_canonical_id = f"canonical:{uuid.uuid4()}"
+            operation_id = f"membership-operation:{uuid.uuid4()}"
+            now = _now()
+            conn.execute(
+                "INSERT INTO canonical_events VALUES (?, ?, ?)",
+                (new_canonical_id, now, now),
+            )
+            moved = []
+            for member_event_id in sorted(event_ids):
+                member = by_event[member_event_id]
+                action_id = f"membership-action:{uuid.uuid4()}"
+                conn.execute(
+                    "INSERT INTO canonical_membership_actions VALUES (?, ?, 'split', ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        action_id,
+                        operation_id,
+                        canonical_event_id,
+                        new_canonical_id,
+                        member_event_id,
+                        member["source_revision_at_link"],
+                        member["revision"],
+                        member["linked_at_utc"],
+                        note,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    "UPDATE canonical_event_members SET canonical_event_id=? "
+                    "WHERE canonical_event_id=? AND event_id=?",
+                    (new_canonical_id, canonical_event_id, member_event_id),
+                )
+                moved.append(
+                    {
+                        "event_id": member_event_id,
+                        "source_revision_at_link": member["source_revision_at_link"],
+                        "current_source_revision": member["revision"],
+                        "action_id": action_id,
+                    }
+                )
+            conn.execute(
+                "UPDATE canonical_events SET updated_at_utc=? WHERE canonical_event_id=?",
+                (now, canonical_event_id),
+            )
+            return {
+                "status": "split",
+                "operation_id": operation_id,
+                "source_canonical_event_id": canonical_event_id,
+                "new_canonical_event_id": new_canonical_id,
+                "moved_members": moved,
+                "remaining_member_event_ids": sorted(set(by_event) - set(event_ids)),
+                "note": note,
+                "acted_at_utc": now,
+            }
+    finally:
+        conn.close()
+
+
+def membership_history(
+    database_path: str | Path,
+    *,
+    event_id: str | None = None,
+    canonical_event_id: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """Read the append-only unlink/split audit trail."""
+    if not 1 <= limit <= 1000:
+        raise ValueError("limit must be between 1 and 1000")
+    if event_id is not None and not event_id:
+        raise ValueError("event ID filter must be non-empty")
+    if canonical_event_id is not None and not canonical_event_id:
+        raise ValueError("canonical identity filter must be non-empty")
+    conn = _open(database_path)
+    try:
+        clauses = []
+        params: list[object] = []
+        if event_id is not None:
+            clauses.append("event_id=?")
+            params.append(event_id)
+        if canonical_event_id is not None:
+            clauses.append("(canonical_event_id=? OR target_canonical_event_id=?)")
+            params.extend((canonical_event_id, canonical_event_id))
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        rows = conn.execute(
+            "SELECT * FROM canonical_membership_actions" + where
+            + " ORDER BY acted_at_utc, operation_id, action_id LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 

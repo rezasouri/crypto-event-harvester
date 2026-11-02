@@ -123,13 +123,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reconcile.add_argument("--db", required=True, type=Path)
     reconcile.add_argument(
-        "--action", choices=("status", "pending", "list", "history", "accept", "reject"), required=True
+        "--action",
+        choices=(
+            "status", "pending", "list", "history", "membership-history",
+            "accept", "reject", "unlink", "split",
+        ),
+        required=True,
     )
     reconcile.add_argument("--strategy", choices=("exact", "similarity"))
     reconcile.add_argument("--min-score", type=float, default=0.80)
     reconcile.add_argument("--left-event-id")
     reconcile.add_argument("--right-event-id")
-    reconcile.add_argument("--event-id")
+    reconcile.add_argument("--event-id", help="Source event ID for history or unlink")
+    reconcile.add_argument("--canonical-event-id", help="Canonical identity ID for unlink, split or history")
+    reconcile.add_argument(
+        "--event-ids", nargs="+", help="One or more current member event IDs to move during split"
+    )
     reconcile.add_argument("--note")
     reconcile.add_argument("--limit", type=int, default=100)
 
@@ -364,9 +373,12 @@ def _reconcile(args) -> int:
     from .reconciliation import (
         canonical_list,
         decision_history,
+        membership_history,
         pending_candidates,
         reconcile_pair,
         reconciliation_status,
+        split_canonical_identity,
+        unlink_member,
     )
 
     try:
@@ -387,8 +399,33 @@ def _reconcile(args) -> int:
             )
         elif args.action == "list":
             result = canonical_list(args.db, limit=args.limit)
-        else:
+        elif args.action == "history":
             result = decision_history(args.db, event_id=args.event_id, limit=args.limit)
+        elif args.action == "membership-history":
+            result = membership_history(
+                args.db,
+                event_id=args.event_id,
+                canonical_event_id=args.canonical_event_id,
+                limit=args.limit,
+            )
+        elif args.action == "unlink":
+            if not args.canonical_event_id or not args.event_id:
+                raise ValueError("unlink requires --canonical-event-id and --event-id")
+            result = unlink_member(
+                args.db,
+                canonical_event_id=args.canonical_event_id,
+                event_id=args.event_id,
+                note=args.note,
+            )
+        else:
+            if not args.canonical_event_id or not args.event_ids:
+                raise ValueError("split requires --canonical-event-id and one or more --event-ids")
+            result = split_canonical_identity(
+                args.db,
+                canonical_event_id=args.canonical_event_id,
+                event_ids=args.event_ids,
+                note=args.note,
+            )
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, RuntimeError, sqlite3.DatabaseError) as exc:

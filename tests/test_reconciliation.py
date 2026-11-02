@@ -15,9 +15,12 @@ from crypto_event_harvester.providers.icodrops import parse_listing as parse_ico
 from crypto_event_harvester.reconciliation import (
     canonical_list,
     decision_history,
+    membership_history,
     pending_candidates,
     reconcile_pair,
     reconciliation_status,
+    split_canonical_identity,
+    unlink_member,
 )
 from crypto_event_harvester.storage import sync_events
 
@@ -267,6 +270,9 @@ def test_stale_ineligible_pairs_and_failed_transactions(tmp_path):
         "accepted_decisions": 0,
         "rejected_decisions": 0,
         "stale_memberships": 0,
+        "empty_canonical_events": 0,
+        "unlinked_actions": 0,
+        "split_actions": 0,
     }
 
 
@@ -278,7 +284,20 @@ def test_version_one_migration_preserves_existing_data_and_is_repeatable(tmp_pat
     before_revisions = conn.execute("SELECT * FROM event_revisions ORDER BY event_id, revision").fetchall()
     conn.execute("CREATE TABLE checkpoints (name TEXT PRIMARY KEY, value TEXT)")
     conn.execute("INSERT INTO checkpoints VALUES ('x', 'preserved')")
-    for name in ("canonical_event_members", "canonical_events", "reconciliation_decisions"):
+    for name in (
+        "trg_canonical_member_provider_update",
+        "trg_canonical_member_delete_audited",
+        "trg_canonical_member_move_audited",
+        "trg_membership_actions_no_update",
+        "trg_membership_actions_no_delete",
+    ):
+        conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+    for name in (
+        "canonical_membership_actions",
+        "reconciliation_decisions",
+        "canonical_event_members",
+        "canonical_events",
+    ):
         conn.execute(f"DROP TABLE IF EXISTS {name}")
     conn.execute("PRAGMA user_version=1")
     conn.commit()
@@ -286,7 +305,7 @@ def test_version_one_migration_preserves_existing_data_and_is_repeatable(tmp_pat
     assert reconciliation_status(db)["canonical_events"] == 0
     assert reconciliation_status(db)["canonical_events"] == 0
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
     assert conn.execute("SELECT * FROM events ORDER BY event_id").fetchall() == before_events
     assert (
         conn.execute("SELECT * FROM event_revisions ORDER BY event_id, revision").fetchall()
@@ -296,7 +315,7 @@ def test_version_one_migration_preserves_existing_data_and_is_repeatable(tmp_pat
     conn.close()
 
 
-@pytest.mark.parametrize("action", ["status", "pending", "list", "history"])
+@pytest.mark.parametrize("action", ["status", "pending", "list", "history", "membership-history"])
 def test_cli_read_actions_emit_json(tmp_path, capsys, action):
     db = tmp_path / "events.sqlite"
     first, second, _ = _seed(db)
@@ -362,6 +381,286 @@ def test_cli_accept_reject_and_invalid_arguments(tmp_path, capsys):
     assert error["status"] == "error"
     assert "require both event IDs" in error["error"]
 
+
+
+def test_unlink_member_keeps_identity_and_preserves_both_histories(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, _ = _seed(db)
+    accepted = reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    before_events = sqlite3.connect(db).execute(
+        "SELECT * FROM events ORDER BY event_id"
+    ).fetchall()
+    result = unlink_member(
+        db,
+        canonical_event_id=accepted["canonical_event_id"],
+        event_id=first.event_id,
+        note="Source records describe different event editions",
+    )
+    assert result["status"] == "unlinked"
+    assert result["event_id"] == first.event_id
+    listed = canonical_list(db)
+    assert len(listed) == 1
+    assert listed[0]["canonical_event_id"] == accepted["canonical_event_id"]
+    assert listed[0]["lifecycle_status"] == "active"
+    assert listed[0]["member_count"] == 1
+    assert [member["event_id"] for member in listed[0]["members"]] == [second.event_id]
+    assert reconciliation_status(db)["unlinked_actions"] == 1
+    assert membership_history(db, event_id=first.event_id)[0]["action"] == "unlinked"
+    assert decision_history(db, event_id=first.event_id)[0]["decision"] == "accepted"
+    assert sqlite3.connect(db).execute(
+        "SELECT * FROM events ORDER BY event_id"
+    ).fetchall() == before_events
+
+    unlink_member(
+        db,
+        canonical_event_id=accepted["canonical_event_id"],
+        event_id=second.event_id,
+        note="Empty the retained identity without deleting its history",
+    )
+    empty = canonical_list(db)[0]
+    assert empty["members"] == []
+    assert empty["member_count"] == 0
+    assert empty["lifecycle_status"] == "empty"
+    assert reconciliation_status(db)["empty_canonical_events"] == 1
+    with pytest.raises(ValueError, match="not a member"):
+        unlink_member(
+            db,
+            canonical_event_id=accepted["canonical_event_id"],
+            event_id=second.event_id,
+        )
+
+
+def test_split_moves_only_selected_members_and_records_operation_history(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, third = _seed(db)
+    third = replace(third, event_type=first.event_type, title="Ethereum Shanghai Upgrade")
+    sync_events(db, [third], observed_at_utc="2026-10-29T10:00:00+00:00")
+    accepted = reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=third.event_id,
+        strategy="similarity",
+        decision="accepted",
+        min_score=0.8,
+    )
+    before_events = sqlite3.connect(db).execute(
+        "SELECT * FROM events ORDER BY event_id"
+    ).fetchall()
+    before_revisions = sqlite3.connect(db).execute(
+        "SELECT * FROM event_revisions ORDER BY event_id, revision"
+    ).fetchall()
+
+    result = split_canonical_identity(
+        db,
+        canonical_event_id=accepted["canonical_event_id"],
+        event_ids=[third.event_id],
+        note="Third provider entry is a separate event",
+    )
+    assert result["status"] == "split"
+    assert result["source_canonical_event_id"] == accepted["canonical_event_id"]
+    assert result["moved_members"][0]["event_id"] == third.event_id
+    assert result["remaining_member_event_ids"] == sorted([first.event_id, second.event_id])
+    identities = {item["canonical_event_id"]: item for item in canonical_list(db)}
+    assert set(identities) == {accepted["canonical_event_id"], result["new_canonical_event_id"]}
+    assert identities[accepted["canonical_event_id"]]["member_count"] == 2
+    assert identities[result["new_canonical_event_id"]]["members"][0]["event_id"] == third.event_id
+    assert reconciliation_status(db)["split_actions"] == 1
+    audit = membership_history(
+        db, canonical_event_id=result["new_canonical_event_id"]
+    )
+    assert len(audit) == 1
+    assert audit[0]["action"] == "split"
+    assert audit[0]["canonical_event_id"] == accepted["canonical_event_id"]
+    assert audit[0]["target_canonical_event_id"] == result["new_canonical_event_id"]
+    assert sqlite3.connect(db).execute(
+        "SELECT * FROM events ORDER BY event_id"
+    ).fetchall() == before_events
+    assert sqlite3.connect(db).execute(
+        "SELECT * FROM event_revisions ORDER BY event_id, revision"
+    ).fetchall() == before_revisions
+
+
+def test_split_rejects_invalid_subsets_without_partial_writes(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, _ = _seed(db)
+    accepted = reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    canonical_id = accepted["canonical_event_id"]
+    before = canonical_list(db)
+    with pytest.raises(ValueError, match="proper subset"):
+        split_canonical_identity(
+            db, canonical_event_id=canonical_id, event_ids=[first.event_id, second.event_id]
+        )
+    with pytest.raises(ValueError, match="unique"):
+        split_canonical_identity(
+            db, canonical_event_id=canonical_id, event_ids=[first.event_id, first.event_id]
+        )
+    with pytest.raises(ValueError, match="not members"):
+        split_canonical_identity(
+            db, canonical_event_id=canonical_id, event_ids=["missing:event"]
+        )
+    assert canonical_list(db) == before
+    assert membership_history(db) == []
+    assert reconciliation_status(db)["split_actions"] == 0
+
+
+def test_membership_changes_require_append_only_audit_records(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, _ = _seed(db)
+    accepted = reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    conn = sqlite3.connect(db)
+    with pytest.raises(sqlite3.IntegrityError, match="audit action"):
+        conn.execute(
+            "DELETE FROM canonical_event_members WHERE canonical_event_id=? AND event_id=?",
+            (accepted["canonical_event_id"], first.event_id),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="split audit action"):
+        conn.execute(
+            "UPDATE canonical_event_members SET canonical_event_id='unreviewed' "
+            "WHERE canonical_event_id=? AND event_id=?",
+            (accepted["canonical_event_id"], first.event_id),
+        )
+    conn.rollback()
+    conn.close()
+
+    unlink_member(
+        db,
+        canonical_event_id=accepted["canonical_event_id"],
+        event_id=first.event_id,
+    )
+    conn = sqlite3.connect(db)
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("UPDATE canonical_membership_actions SET note='rewritten'")
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        conn.execute("DELETE FROM canonical_membership_actions")
+    conn.rollback()
+    conn.close()
+
+
+def test_version_two_migration_preserves_existing_canonical_state(tmp_path):
+    db = tmp_path / "events.sqlite"
+    first, second, _ = _seed(db)
+    reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    conn = sqlite3.connect(db)
+    before_members = conn.execute(
+        "SELECT * FROM canonical_event_members ORDER BY event_id"
+    ).fetchall()
+    before_decisions = conn.execute(
+        "SELECT * FROM reconciliation_decisions ORDER BY decision_id"
+    ).fetchall()
+    for name in (
+        "trg_canonical_member_provider_update",
+        "trg_canonical_member_delete_audited",
+        "trg_canonical_member_move_audited",
+        "trg_membership_actions_no_update",
+        "trg_membership_actions_no_delete",
+    ):
+        conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+    conn.execute("DROP TABLE canonical_membership_actions")
+    conn.execute("PRAGMA user_version=2")
+    conn.commit()
+    conn.close()
+
+    assert reconciliation_status(db)["canonical_events"] == 1
+    conn = sqlite3.connect(db)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute(
+        "SELECT * FROM canonical_event_members ORDER BY event_id"
+    ).fetchall() == before_members
+    assert conn.execute(
+        "SELECT * FROM reconciliation_decisions ORDER BY decision_id"
+    ).fetchall() == before_decisions
+    assert conn.execute("SELECT COUNT(*) FROM canonical_membership_actions").fetchone()[0] == 0
+    conn.close()
+
+
+def test_cli_unlink_split_and_membership_history(tmp_path, capsys):
+    db = tmp_path / "events.sqlite"
+    first, second, third = _seed(db)
+    third = replace(third, event_type=first.event_type, title="Ethereum Shanghai Upgrade")
+    sync_events(db, [third], observed_at_utc="2026-10-29T10:00:00+00:00")
+    accepted = reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=second.event_id,
+        strategy="exact",
+        decision="accepted",
+    )
+    reconcile_pair(
+        db,
+        left_event_id=first.event_id,
+        right_event_id=third.event_id,
+        strategy="similarity",
+        decision="accepted",
+        min_score=0.8,
+    )
+    canonical_id = accepted["canonical_event_id"]
+
+    assert main([
+        "reconcile", "--db", str(db), "--action", "split",
+        "--canonical-event-id", canonical_id,
+        "--event-ids", third.event_id,
+        "--note", "Separate provider event",
+    ]) == 0
+    split = json.loads(capsys.readouterr().out)
+    new_id = split["new_canonical_event_id"]
+    assert split["status"] == "split"
+
+    assert main([
+        "reconcile", "--db", str(db), "--action", "membership-history",
+        "--canonical-event-id", new_id,
+    ]) == 0
+    history = json.loads(capsys.readouterr().out)
+    assert len(history) == 1
+    assert history[0]["action"] == "split"
+
+    assert main([
+        "reconcile", "--db", str(db), "--action", "unlink",
+        "--canonical-event-id", canonical_id,
+        "--event-id", first.event_id,
+        "--note", "Manual correction",
+    ]) == 0
+    unlinked = json.loads(capsys.readouterr().out)
+    assert unlinked["status"] == "unlinked"
+    assert unlinked["event_id"] == first.event_id
+
+    assert main([
+        "reconcile", "--db", str(db), "--action", "unlink",
+        "--event-id", first.event_id,
+    ]) == 2
+    error = json.loads(capsys.readouterr().out)
+    assert error["status"] == "error"
+    assert "--canonical-event-id" in error["error"]
 
 def test_database_constraints_and_original_snapshots_unchanged(tmp_path):
     db = tmp_path / "events.sqlite"

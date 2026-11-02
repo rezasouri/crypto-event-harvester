@@ -127,7 +127,9 @@ It creates `canonical_events`, `canonical_event_members`, and the
 append-only `reconciliation_decisions` audit log. Existing event rows,
 revision history, timestamps and unrelated tables are preserved. A member
 can belong to only one canonical identity, and a canonical identity cannot
-contain two events from the same provider.
+contain two events from the same provider. Gate 16 adds an additive migration
+from schema version 2 to version 3 for the canonical membership lifecycle
+audit log and its integrity triggers.
 
 ```bash
 uv run crypto-harvester reconcile --db data/harvest.sqlite --action status
@@ -172,3 +174,57 @@ The report includes component scores, date-overlap relation, matching
 project/ticker fields, threshold path, both provider IDs, URLs and revision
 numbers. A zero-candidate result remains valid when source calendars have
 different coverage.
+
+
+## Gate 16 — canonical identity lifecycle
+
+Gate 16 adds controlled correction operations for manual canonical links.
+They never rewrite or delete source event rows or immutable source revisions.
+
+### Unlink one member
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action unlink \
+  --canonical-event-id canonical:... --event-id coindar:456 \
+  --note "Reviewed as a different event"
+```
+
+The operation removes only the selected membership and writes an immutable
+`unlinked` audit action in the same transaction. The canonical identity is
+retained even when its last member is unlinked; it appears in `list` with
+`lifecycle_status=empty` and remains available to historical decisions.
+
+### Split a proper subset into a new identity
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action split \
+  --canonical-event-id canonical:... --event-ids coindar:456 cryptoevents:789 \
+  --note "These source entries describe a separate event"
+```
+
+The selected IDs must be unique current members of the source identity.
+The operation must move a proper subset, leaving at least one member in the
+original identity. A new canonical identity is created, selected memberships
+are moved without changing their linked revision or timestamp, and one
+immutable `split` audit row is recorded per moved event. All changes commit
+or roll back together.
+
+### Audit and status
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action membership-history
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action membership-history \
+  --canonical-event-id canonical:...
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action membership-history \
+  --event-id coindar:456
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action status
+uv run crypto-harvester reconcile --db data/harvest.sqlite --action list
+```
+
+The `canonical_membership_actions` table is append-only. SQLite triggers
+reject direct membership deletion or movement unless a matching audit action
+was inserted in the same transaction; audit rows themselves cannot be
+updated or deleted. Status reports unlink/split action counts and retained
+empty identities. Schema version 2 databases migrate additively to version 3,
+preserving existing canonical memberships, decisions, source events and
+revision history.
