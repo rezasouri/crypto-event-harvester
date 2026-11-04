@@ -9,7 +9,7 @@ import pytest
 
 from crypto_event_harvester.cli import main
 from crypto_event_harvester.cross_provider_candidates import match_similar_candidates
-from crypto_event_harvester.matching_coverage import diagnose_matching_coverage
+from crypto_event_harvester.matching_coverage import _relationship_hint, diagnose_matching_coverage
 from crypto_event_harvester.normalization import normalize_event
 from crypto_event_harvester.providers.coindar import parse_listing as parse_coindar
 from crypto_event_harvester.providers.cryptoevents import parse_listing as parse_cryptoevents
@@ -102,6 +102,42 @@ def test_related_conference_participation_is_not_a_canonical_identity(tmp_path):
     ).fetchone()[0] == before_decisions
     conn.close()
     assert match_similar_candidates(db).candidates_total == 0
+
+
+def test_participation_url_slug_is_evidence_when_description_omits_verb():
+    left = {
+        "event_id": "coindar:155763",
+        "provider": "coindar",
+        "title": "Hong Kong FinTech Week in Hong Kong",
+        "description": "Bitget Token community update in Hong Kong.",
+        "source_url": (
+            "https://www.coindar.org/en/event/"
+            "bitget-token-to-participate-in-hong-kong-fintech-week-155763"
+        ),
+        "start_date": "2026-11-03",
+        "end_date": "2026-11-03",
+    }
+    right = {
+        "event_id": "cryptoevents:hong-kong-fintech-week",
+        "provider": "cryptoevents",
+        "title": "Hong Kong FinTech Week x StartmeupHK Festival 2026",
+        "description": "A conference in Hong Kong.",
+        "location": "Hong Kong",
+        "source_url": "https://cryptoevents.global/hong-kong-fintech-week/",
+        "start_date": "2026-11-02",
+        "end_date": "2026-11-06",
+    }
+    hint = _relationship_hint(
+        left,
+        right,
+        title_similarity=0.6029,
+        character_similarity=0.6286,
+        token_jaccard=0.5714,
+    )
+    assert hint["relation_hint"] == "possible_participation_mention"
+    assert hint["participation_language_detected"] is True
+    assert hint["participation_signal_sources"] == ["coindar_source_url"]
+    assert hint["not_an_identity_decision"] is True
 
 
 def test_no_date_overlap_means_no_related_hints(tmp_path):
