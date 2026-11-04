@@ -344,3 +344,44 @@ Metrics remain scoped to reviewed candidate pairs. Candidate-generation
 selection bias and the absence of labels for unreviewed pairs still prevent
 population-recall claims. Human review quality and reviewer agreement are
 not inferred from the CSV itself.
+
+## Gate 19 — coverage diagnosis and related-record hints
+
+This gate intentionally does **not** loosen the strict identity matcher. The
+pilot sources currently differ in scope: Coindar often records a project's
+participation in an event while CryptoEvents describes the conference itself.
+Such records can be related without being the same canonical event.
+
+Run the read-only diagnosis:
+
+```bash
+uv run crypto-harvester reconcile --db data/harvest.sqlite \
+  --action diagnose-coverage --limit 20 \
+  --min-title-similarity 0.55 --min-score 0.80
+```
+
+The JSON report contains:
+
+- Counts of source records, date precision, event types and populated metadata
+  fields by provider.
+- Number of dated cross-provider pairs whose date intervals overlap.
+- First blocking reason from the existing strict matcher for each overlapping
+  pair. These counters are *diagnostic*, not labeled outcomes.
+- A separate ranked set of possible **relationships** based on shared title
+  tokens, lexical title similarity, dates and optional location/participation
+  language in Coindar descriptions or source URL slugs. The signal sources are
+  reported for auditability. A title-related Coindar participation record may
+  describe a distinct action from the CryptoEvents conference.
+- Explicit `not_an_identity_decision` markers, zero requests and zero database
+  modifications. No new tables, migrations, model calls or APIs.
+
+The relationship hints are **not** eligible for the Gate 18 `review-import`
+identity workflow. They cannot be used to automatically link, accept or reject
+canonical identities. This prevents conflating *participates in* with *is the
+same event as*. A separate independently reviewed relationship taxonomy and
+label store would be needed before using those signals for training/evaluation.
+
+Even when the diagnosis finds no strict candidates, this does not prove that
+the full event population has no duplicates. To measure identity precision or
+recall, collect independently verified positive and negative pairs from
+sources with genuinely overlapping event taxonomies.
