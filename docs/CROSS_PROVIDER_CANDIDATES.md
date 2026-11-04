@@ -369,8 +369,9 @@ The JSON report contains:
   pair. These counters are *diagnostic*, not labeled outcomes.
 - A separate ranked set of possible **relationships** based on shared title
   tokens, lexical title similarity, dates and optional location/participation
-  language. A title-related Coindar participation record may describe a
-  distinct action from the CryptoEvents conference.
+  language in Coindar descriptions or source URL slugs. The signal sources are
+  reported for auditability. A title-related Coindar participation record may
+  describe a distinct action from the CryptoEvents conference.
 - Explicit `not_an_identity_decision` markers, zero requests and zero database
   modifications. No new tables, migrations, model calls or APIs.
 
