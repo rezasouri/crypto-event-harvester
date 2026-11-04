@@ -126,13 +126,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--action",
         choices=(
             "status", "pending", "list", "history", "membership-history", "evaluate",
-            "review-export", "review-import",
+            "review-export", "review-import", "diagnose-coverage",
             "accept", "reject", "unlink", "split",
         ),
         required=True,
     )
     reconcile.add_argument("--strategy", choices=("exact", "similarity"))
     reconcile.add_argument("--min-score", type=float, default=0.80)
+    reconcile.add_argument(
+        "--min-title-similarity",
+        type=float,
+        default=0.55,
+        help="Minimum lexical similarity for read-only related-record hints",
+    )
     reconcile.add_argument("--left-event-id")
     reconcile.add_argument("--right-event-id")
     reconcile.add_argument("--event-id", help="Source event ID for history or unlink")
@@ -399,6 +405,7 @@ def _store(args) -> int:
 
 
 def _reconcile(args) -> int:
+    from .matching_coverage import diagnose_matching_coverage
     from .matching_evaluation import evaluate_reconciliation
     from .reconciliation import (
         canonical_list,
@@ -437,6 +444,15 @@ def _reconcile(args) -> int:
                 args.db,
                 thresholds=args.thresholds,
                 min_reviewed_pairs=args.min_reviewed_pairs,
+            )
+        elif args.action == "diagnose-coverage":
+            if args.input or args.output or args.apply:
+                raise ValueError("diagnose-coverage does not accept --input, --output or --apply")
+            result = diagnose_matching_coverage(
+                args.db,
+                limit=args.limit,
+                min_title_similarity=args.min_title_similarity,
+                strict_min_score=args.min_score,
             )
         elif args.action == "review-export":
             if not args.output:
