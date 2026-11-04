@@ -83,19 +83,19 @@ def _relationship_hint(
     character_similarity: float,
     token_jaccard: float,
 ) -> dict:
-    descriptions = [
-        item.get("description") or ""
-        for item in (left, right)
-        if item.get("provider") == "coindar"
-    ]
     participation_terms = (
         "participat", "attend", "exhibit", "sponsor",
         "speaking at", "speaker at", "will join",
     )
-    possible_participation = any(
-        any(term in _canonical(description) for term in participation_terms)
-        for description in descriptions
-    )
+    signal_sources = []
+    for item in (left, right):
+        if item.get("provider") != "coindar":
+            continue
+        for field in ("description", "source_url"):
+            normalized = _canonical(item.get(field))
+            if any(term in normalized for term in participation_terms):
+                signal_sources.append(f"coindar_{field}")
+    possible_participation = bool(signal_sources)
 
     location = next(
         (
@@ -135,6 +135,7 @@ def _relationship_hint(
         "token_jaccard": token_jaccard,
         "location_mentioned": location_mentioned,
         "participation_language_detected": possible_participation,
+        "participation_signal_sources": sorted(set(signal_sources)),
         "date_relation": _date_overlap(left, right)[1],
     }
 
