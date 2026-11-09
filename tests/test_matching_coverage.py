@@ -172,6 +172,8 @@ def test_read_only_diagnosis_does_not_migrate_schema_v1(tmp_path):
     ).fetchall():
         conn.execute(f'DROP TRIGGER "{name}"')
     for table in (
+        "event_relationships",
+        "event_relationship_decisions",
         "canonical_membership_actions",
         "reconciliation_decisions",
         "canonical_event_members",

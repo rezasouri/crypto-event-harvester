@@ -32,6 +32,8 @@ def _downgrade_to_v1(database_path):
     for (name,) in triggers:
         conn.execute(f'DROP TRIGGER "{name}"')
     for table in (
+        "event_relationships",
+        "event_relationship_decisions",
         "canonical_membership_actions",
         "reconciliation_decisions",
         "canonical_event_members",
@@ -291,7 +293,7 @@ def test_stale_exported_revision_is_never_applied(tmp_path):
     assert result["applied_count"] == 0
     assert result["rows"][0]["status"] == "stale"
     conn = sqlite3.connect(database_path)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     assert conn.execute(
         "SELECT COUNT(*) FROM reconciliation_decisions"
     ).fetchone()[0] == 0

@@ -385,3 +385,55 @@ Even when the diagnosis finds no strict candidates, this does not prove that
 the full event population has no duplicates. To measure identity precision or
 recall, collect independently verified positive and negative pairs from
 sources with genuinely overlapping event taxonomies.
+
+## Gate 20 — human-reviewed semantic event relationship graph
+
+Gate 20 adds a relationship graph for directed semantic links between source
+event records. It is deliberately separate from canonical identity:
+
+- \`same_event\` is **not** a graph predicate. It remains managed exclusively by
+  \`reconcile accept/reject\` and canonical memberships.
+- \`participates_in\`, \`sponsors\`, \`speaks_at\`, \`organizes\`, \`attends\`,
+  \`exhibits_at\` and \`related_to\` are directed semantic predicates.
+- The subject is the source event record making or carrying the assertion; the
+  object is the event record it refers to. For example, a Coindar project
+  participation record can be the subject and a CryptoEvents conference record
+  the object.
+- Every accepted/rejected review records the exact subject/object source
+  revisions and a snapshot of their relevant metadata plus reviewer evidence.
+- Accepted edges form the current graph projection. Decision history is
+  append-only; retraction removes an edge only after an audited retraction.
+- Source event rows, immutable source revisions and canonical memberships are
+  not rewritten. Edges whose source revisions have advanced are reported stale
+  until explicitly re-reviewed.
+- This gate creates no edges automatically and makes no network requests.
+
+Inspect graph state (indented command examples):
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action status
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action list
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action history
+
+Accept one manually verified directed relationship (replace IDs and revision
+numbers with the exact source records you reviewed):
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action accept \
+      --subject-event-id coindar:155698 \
+      --object-event-id cryptoevents:india-blockchain-week-2026-conference \
+      --relation-type participates_in \
+      --subject-revision 1 --object-revision 1 \
+      --evidence-json '{"basis":"Coindar source URL and description identify project participation"}' \
+      --note "Manually verified participation mention"
+
+Use \`--action reject\` with the same pair/predicate to record a negative
+relationship label. Use \`--action retract --relationship-id relationship:...\`
+to remove an accepted edge while preserving its audit trail. A rejected
+decision does not create a graph edge. Repeated identical decisions are
+idempotent; contradictory decisions for the same exact source revisions fail
+closed. After a source revision changes, the old edge is marked stale and a
+new review must explicitly target the new revisions.
+
+Schema version 3 migrates additively to version 4. Existing source events,
+revision history, canonical identities and reconciliation decisions are
+preserved. The graph is a manually curated knowledge layer, not an inferred
+ground-truth dataset or an automatic merge mechanism.

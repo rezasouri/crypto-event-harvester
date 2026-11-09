@@ -293,6 +293,8 @@ def test_version_one_migration_preserves_existing_data_and_is_repeatable(tmp_pat
     ):
         conn.execute(f"DROP TRIGGER IF EXISTS {name}")
     for name in (
+        "event_relationships",
+        "event_relationship_decisions",
         "canonical_membership_actions",
         "reconciliation_decisions",
         "canonical_event_members",
@@ -305,7 +307,7 @@ def test_version_one_migration_preserves_existing_data_and_is_repeatable(tmp_pat
     assert reconciliation_status(db)["canonical_events"] == 0
     assert reconciliation_status(db)["canonical_events"] == 0
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     assert conn.execute("SELECT * FROM events ORDER BY event_id").fetchall() == before_events
     assert (
         conn.execute("SELECT * FROM event_revisions ORDER BY event_id, revision").fetchall()
@@ -587,13 +589,15 @@ def test_version_two_migration_preserves_existing_canonical_state(tmp_path):
     ):
         conn.execute(f"DROP TRIGGER IF EXISTS {name}")
     conn.execute("DROP TABLE canonical_membership_actions")
+    conn.execute("DROP TABLE event_relationships")
+    conn.execute("DROP TABLE event_relationship_decisions")
     conn.execute("PRAGMA user_version=2")
     conn.commit()
     conn.close()
 
     assert reconciliation_status(db)["canonical_events"] == 1
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     assert conn.execute(
         "SELECT * FROM canonical_event_members ORDER BY event_id"
     ).fetchall() == before_members

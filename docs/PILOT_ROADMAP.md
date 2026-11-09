@@ -148,3 +148,16 @@ related records separately from canonical identity candidates, highlighting
 conference participation/mention signals and city corroboration. Preserve
 existing strict identity decisions, Gate 18 import eligibility, append-only
 history and source tables. No new schema, network access or auto-merging.
+
+## Gate 20 status — human-reviewed semantic relationship graph
+
+Add a separate directed graph for semantic relationships between source event
+records. The graph supports participation, sponsorship, speaking, organizing,
+attendance, exhibition and generic related-to predicates. Canonical
+same-event identity remains exclusively in the existing reconciliation
+subsystem to avoid duplicate sources of truth. Every relationship decision
+captures immutable source revision references, metadata evidence and an
+append-only decision history. Accepted edges are a current projection;
+retractions are audited and stale source snapshots require re-review. No
+automatic edge creation, source requests or source-row mutation. SQLite
+schema version 3 migrates additively to version 4.

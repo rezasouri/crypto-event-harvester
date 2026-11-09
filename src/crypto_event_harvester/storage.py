@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .normalization import UnifiedEvent
 
-DB_VERSION = 3
+DB_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
@@ -197,6 +197,235 @@ BEGIN
 END;
 """
 
+_RELATIONSHIP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS event_relationship_decisions (
+    decision_id TEXT PRIMARY KEY,
+    relationship_id TEXT NOT NULL,
+    subject_event_id TEXT NOT NULL,
+    object_event_id TEXT NOT NULL,
+    subject_revision INTEGER NOT NULL CHECK (subject_revision >= 1),
+    object_revision INTEGER NOT NULL CHECK (object_revision >= 1),
+    relation_type TEXT NOT NULL CHECK (relation_type IN (
+        'participates_in', 'sponsors', 'speaks_at', 'organizes',
+        'attends', 'exhibits_at', 'related_to'
+    )),
+    decision TEXT NOT NULL CHECK (decision IN ('accepted', 'rejected', 'retracted')),
+    evidence_json TEXT NOT NULL,
+    supersedes_decision_id TEXT REFERENCES event_relationship_decisions(decision_id),
+    note TEXT,
+    decided_at_utc TEXT NOT NULL,
+    CHECK (subject_event_id <> object_event_id),
+    CHECK (
+        (decision = 'retracted' AND supersedes_decision_id IS NOT NULL)
+        OR
+        (decision IN ('accepted', 'rejected') AND supersedes_decision_id IS NULL)
+    ),
+    FOREIGN KEY (subject_event_id, subject_revision)
+        REFERENCES event_revisions(event_id, revision),
+    FOREIGN KEY (object_event_id, object_revision)
+        REFERENCES event_revisions(event_id, revision)
+);
+CREATE INDEX IF NOT EXISTS ix_relationship_decisions_pair
+    ON event_relationship_decisions(
+        relationship_id, subject_revision, object_revision, relation_type
+    );
+CREATE INDEX IF NOT EXISTS ix_relationship_decisions_subject
+    ON event_relationship_decisions(subject_event_id, decided_at_utc);
+CREATE INDEX IF NOT EXISTS ix_relationship_decisions_object
+    ON event_relationship_decisions(object_event_id, decided_at_utc);
+CREATE TABLE IF NOT EXISTS event_relationships (
+    relationship_id TEXT PRIMARY KEY,
+    subject_event_id TEXT NOT NULL REFERENCES events(event_id),
+    object_event_id TEXT NOT NULL REFERENCES events(event_id),
+    relation_type TEXT NOT NULL CHECK (relation_type IN (
+        'participates_in', 'sponsors', 'speaks_at', 'organizes',
+        'attends', 'exhibits_at', 'related_to'
+    )),
+    subject_revision INTEGER NOT NULL CHECK (subject_revision >= 1),
+    object_revision INTEGER NOT NULL CHECK (object_revision >= 1),
+    evidence_json TEXT NOT NULL,
+    accepted_decision_id TEXT NOT NULL UNIQUE
+        REFERENCES event_relationship_decisions(decision_id),
+    created_at_utc TEXT NOT NULL,
+    updated_at_utc TEXT NOT NULL,
+    CHECK (subject_event_id <> object_event_id),
+    UNIQUE (subject_event_id, object_event_id, relation_type),
+    FOREIGN KEY (subject_event_id, subject_revision)
+        REFERENCES event_revisions(event_id, revision),
+    FOREIGN KEY (object_event_id, object_revision)
+        REFERENCES event_revisions(event_id, revision)
+);
+CREATE INDEX IF NOT EXISTS ix_relationships_subject
+    ON event_relationships(subject_event_id, relation_type);
+CREATE INDEX IF NOT EXISTS ix_relationships_object
+    ON event_relationships(object_event_id, relation_type);
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decision_transition
+BEFORE INSERT ON event_relationship_decisions
+WHEN NEW.decision IN ('accepted', 'rejected')
+ AND (
+    SELECT prior.decision
+    FROM event_relationship_decisions prior
+    WHERE prior.relationship_id = NEW.relationship_id
+      AND prior.subject_event_id = NEW.subject_event_id
+      AND prior.object_event_id = NEW.object_event_id
+      AND prior.subject_revision = NEW.subject_revision
+      AND prior.object_revision = NEW.object_revision
+      AND prior.relation_type = NEW.relation_type
+    ORDER BY prior.rowid DESC
+    LIMIT 1
+ ) IN ('accepted', 'rejected')
+ AND (
+    SELECT prior.decision
+    FROM event_relationship_decisions prior
+    WHERE prior.relationship_id = NEW.relationship_id
+      AND prior.subject_event_id = NEW.subject_event_id
+      AND prior.object_event_id = NEW.object_event_id
+      AND prior.subject_revision = NEW.subject_revision
+      AND prior.object_revision = NEW.object_revision
+      AND prior.relation_type = NEW.relation_type
+    ORDER BY prior.rowid DESC
+    LIMIT 1
+ ) <> NEW.decision
+BEGIN
+    SELECT RAISE(ABORT, 'conflicting relationship decision for the same source revisions');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_retraction_matches_edge
+BEFORE INSERT ON event_relationship_decisions
+WHEN NEW.decision = 'retracted'
+ AND NOT EXISTS (
+    SELECT 1 FROM event_relationships r
+    WHERE r.relationship_id = NEW.relationship_id
+      AND r.subject_event_id = NEW.subject_event_id
+      AND r.object_event_id = NEW.object_event_id
+      AND r.subject_revision = NEW.subject_revision
+      AND r.object_revision = NEW.object_revision
+      AND r.relation_type = NEW.relation_type
+      AND r.accepted_decision_id = NEW.supersedes_decision_id
+ )
+BEGIN
+    SELECT RAISE(ABORT, 'relationship retraction must reference the current accepted edge');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decisions_no_update
+BEFORE UPDATE ON event_relationship_decisions
+BEGIN
+    SELECT RAISE(ABORT, 'relationship decisions are append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decisions_no_delete
+BEFORE DELETE ON event_relationship_decisions
+BEGIN
+    SELECT RAISE(ABORT, 'relationship decisions are append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_edge_insert_requires_decision
+BEFORE INSERT ON event_relationships
+WHEN NOT EXISTS (
+    SELECT 1 FROM event_relationship_decisions d
+    WHERE d.decision_id = NEW.accepted_decision_id
+      AND d.relationship_id = NEW.relationship_id
+      AND d.subject_event_id = NEW.subject_event_id
+      AND d.object_event_id = NEW.object_event_id
+      AND d.subject_revision = NEW.subject_revision
+      AND d.object_revision = NEW.object_revision
+      AND d.relation_type = NEW.relation_type
+      AND d.decision = 'accepted'
+      AND d.rowid = (
+          SELECT latest.rowid
+          FROM event_relationship_decisions latest
+          WHERE latest.relationship_id = NEW.relationship_id
+            AND latest.subject_revision = NEW.subject_revision
+            AND latest.object_revision = NEW.object_revision
+            AND latest.relation_type = NEW.relation_type
+          ORDER BY latest.rowid DESC
+          LIMIT 1
+      )
+)
+BEGIN
+    SELECT RAISE(ABORT, 'relationship edge requires its latest accepted review decision');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_edge_update_requires_decision
+BEFORE UPDATE ON event_relationships
+WHEN NEW.accepted_decision_id = OLD.accepted_decision_id
+ OR NOT EXISTS (
+    SELECT 1 FROM event_relationship_decisions d
+    WHERE d.decision_id = NEW.accepted_decision_id
+      AND d.relationship_id = NEW.relationship_id
+      AND d.subject_event_id = NEW.subject_event_id
+      AND d.object_event_id = NEW.object_event_id
+      AND d.subject_revision = NEW.subject_revision
+      AND d.object_revision = NEW.object_revision
+      AND d.relation_type = NEW.relation_type
+      AND d.decision = 'accepted'
+      AND d.rowid = (
+          SELECT latest.rowid
+          FROM event_relationship_decisions latest
+          WHERE latest.relationship_id = NEW.relationship_id
+            AND latest.subject_revision = NEW.subject_revision
+            AND latest.object_revision = NEW.object_revision
+            AND latest.relation_type = NEW.relation_type
+          ORDER BY latest.rowid DESC
+          LIMIT 1
+      )
+)
+BEGIN
+    SELECT RAISE(ABORT, 'relationship edge update requires its latest accepted review decision');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decision_projects_accepted_edge
+AFTER INSERT ON event_relationship_decisions
+WHEN NEW.decision = 'accepted'
+BEGIN
+    INSERT INTO event_relationships (
+        relationship_id, subject_event_id, object_event_id, relation_type,
+        subject_revision, object_revision, evidence_json, accepted_decision_id,
+        created_at_utc, updated_at_utc
+    ) VALUES (
+        NEW.relationship_id, NEW.subject_event_id, NEW.object_event_id, NEW.relation_type,
+        NEW.subject_revision, NEW.object_revision, NEW.evidence_json, NEW.decision_id,
+        NEW.decided_at_utc, NEW.decided_at_utc
+    )
+    ON CONFLICT(subject_event_id, object_event_id, relation_type)
+    DO UPDATE SET
+        subject_revision=excluded.subject_revision,
+        object_revision=excluded.object_revision,
+        evidence_json=excluded.evidence_json,
+        accepted_decision_id=excluded.accepted_decision_id,
+        updated_at_utc=excluded.updated_at_utc;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decision_projects_retraction
+AFTER INSERT ON event_relationship_decisions
+WHEN NEW.decision = 'retracted'
+BEGIN
+    DELETE FROM event_relationships
+    WHERE relationship_id = NEW.relationship_id
+      AND accepted_decision_id = NEW.supersedes_decision_id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_edge_delete_requires_retraction
+BEFORE DELETE ON event_relationships
+WHEN NOT EXISTS (
+    SELECT 1 FROM event_relationship_decisions d
+    WHERE d.relationship_id = OLD.relationship_id
+      AND d.subject_event_id = OLD.subject_event_id
+      AND d.object_event_id = OLD.object_event_id
+      AND d.subject_revision = OLD.subject_revision
+      AND d.object_revision = OLD.object_revision
+      AND d.relation_type = OLD.relation_type
+      AND d.decision = 'retracted'
+      AND d.supersedes_decision_id = OLD.accepted_decision_id
+      AND d.rowid = (
+          SELECT latest.rowid
+          FROM event_relationship_decisions latest
+          WHERE latest.relationship_id = OLD.relationship_id
+            AND latest.subject_revision = OLD.subject_revision
+            AND latest.object_revision = OLD.object_revision
+            AND latest.relation_type = OLD.relation_type
+          ORDER BY latest.rowid DESC
+          LIMIT 1
+      )
+)
+BEGIN
+    SELECT RAISE(ABORT, 'relationship edge removal requires an audited retraction');
+END;
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class SyncResult:
     inserted: int
@@ -242,22 +471,29 @@ def _connect(path: Path, *, create: bool) -> sqlite3.Connection:
     if create:
         conn.execute("PRAGMA journal_mode = WAL")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, DB_VERSION):
+        if version not in (0, 1, 2, 3, DB_VERSION):
             conn.close()
             raise RuntimeError(f"unsupported event database version: {version}")
         if version == 0:
             conn.executescript(
-                "BEGIN IMMEDIATE;\n" + _SCHEMA + _RECONCILIATION_SCHEMA + _LIFECYCLE_SCHEMA
+                "BEGIN IMMEDIATE;\n" + _SCHEMA + _RECONCILIATION_SCHEMA
+                + _LIFECYCLE_SCHEMA + _RELATIONSHIP_SCHEMA
                 + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
             )
         elif version == 1:
             conn.executescript(
-                "BEGIN IMMEDIATE;\n" + _RECONCILIATION_SCHEMA + _LIFECYCLE_SCHEMA
+                "BEGIN IMMEDIATE;\n" + _RECONCILIATION_SCHEMA
+                + _LIFECYCLE_SCHEMA + _RELATIONSHIP_SCHEMA
                 + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
             )
         elif version == 2:
             conn.executescript(
-                "BEGIN IMMEDIATE;\n" + _LIFECYCLE_SCHEMA
+                "BEGIN IMMEDIATE;\n" + _LIFECYCLE_SCHEMA + _RELATIONSHIP_SCHEMA
+                + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
+            )
+        elif version == 3:
+            conn.executescript(
+                "BEGIN IMMEDIATE;\n" + _RELATIONSHIP_SCHEMA
                 + f"\nPRAGMA user_version = {DB_VERSION};\nCOMMIT;"
             )
     return conn
