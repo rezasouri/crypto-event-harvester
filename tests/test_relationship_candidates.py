@@ -185,6 +185,32 @@ def test_url_slug_can_supply_explicit_relationship_language(tmp_path):
     assert cue["mode"] == "participant"
 
 
+def test_target_title_can_be_grounded_by_url_when_description_is_generic(tmp_path):
+    db = tmp_path / "events.sqlite"
+    _seed(
+        db,
+        project="Aave",
+        subject_title="Aave event in Mumbai",
+        description="Aave will participate at the event on November 3rd.",
+        source_url=(
+            "https://www.coindar.org/en/event/"
+            "aave-to-participate-at-devcon-mumbai-on-november-3"
+        ),
+        object_title="Devcon 2026 Mumbai",
+        object_location="Mumbai",
+        subject_start="2026-11-03",
+        subject_end="2026-11-03",
+        object_start="2026-11-03",
+        object_end="2026-11-04",
+    )
+
+    report = discover_relationship_candidates(db)
+
+    assert report["candidates_total"] == 1
+    assert report["candidates"][0]["evidence"]["relation_cue"]["field"] == "source_url"
+    assert report["candidates"][0]["evidence"]["target_match"]["shared_tokens"] == ["devcon"]
+
+
 def test_representation_is_evidence_mode_not_a_speaking_claim(tmp_path):
     db = tmp_path / "events.sqlite"
     _seed(
