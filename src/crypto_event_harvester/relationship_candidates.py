@@ -128,6 +128,26 @@ _RELATION_TARGET_GENERIC_TERMS = frozenset(
 )
 
 
+_GEOGRAPHIC_TITLE_TERMS = frozenset(
+    {
+        "afghanistan", "albania", "algeria", "argentina", "australia", "austria",
+        "bahrain", "bangladesh", "belgium", "brazil", "bulgaria", "cambodia",
+        "canada", "chile", "china", "colombia", "croatia", "cyprus", "czechia",
+        "denmark", "egypt", "estonia", "finland", "france", "georgia", "germany",
+        "ghana", "greece", "hungary", "iceland", "india", "indonesia", "iran",
+        "iraq", "ireland", "israel", "italy", "japan", "jordan", "kenya",
+        "kuwait", "latvia", "lebanon", "lithuania", "luxembourg", "malaysia",
+        "maldives", "malta", "mexico", "monaco", "mongolia", "morocco", "nepal",
+        "netherlands", "new", "zealand", "nigeria", "norway", "oman", "pakistan",
+        "panama", "peru", "philippines", "poland", "portugal", "qatar", "romania",
+        "russia", "saudi", "arabia", "serbia", "singapore", "slovakia", "slovenia",
+        "south", "korea", "spain", "sri", "lanka", "sweden", "switzerland",
+        "taiwan", "thailand", "turkey", "ukraine", "united", "kingdom", "states",
+        "uae", "vietnam",
+    }
+)
+
+
 def _url_text(value: object) -> str:
     if not isinstance(value, str) or not value:
         return ""
@@ -211,7 +231,7 @@ def _target_match(object_event: dict, cue: dict) -> dict | None:
     location_tokens = _meaningful_tokens(object_event.get("location"))
     anchor_tokens = {
         token
-        for token in title_tokens - _RELATION_TARGET_GENERIC_TERMS - location_tokens
+        for token in title_tokens - _RELATION_TARGET_GENERIC_TERMS - _GEOGRAPHIC_TITLE_TERMS - location_tokens
         if not token.isdigit()
     }
     if not anchor_tokens:
@@ -409,7 +429,7 @@ def discover_relationship_candidates(
     conference_count = sum(_is_conference(item) for item, _ in eligible)
     examined_pairs = 0
     reviewed_excluded = 0
-    candidates_by_relationship_id: dict[str, dict] = {}
+    candidate_groups: dict[tuple[str, str], dict[str, dict[str, dict]]] = {}
     reviewed_excluded_keys: set[tuple[str, int, str, int, str]] = set()
 
     for index, (left, left_revision) in enumerate(eligible):
@@ -462,17 +482,27 @@ def discover_relationship_candidates(
                     if previous_decision in {"accepted", "rejected"}:
                         reviewed_excluded_keys.add(key)
                         continue
-                    previous_candidate = candidates_by_relationship_id.get(
-                        candidate["relationship_id"]
+                    pair_key = (
+                        subject["event_id"],
+                        object_event["event_id"],
                     )
+                    field_group = candidate_groups.setdefault(pair_key, {}).setdefault(
+                        cue["field"], {}
+                    )
+                    previous_candidate = field_group.get(candidate["relation_type"])
                     if (
                         previous_candidate is None
                         or candidate["score"] > previous_candidate["score"]
                     ):
-                        candidates_by_relationship_id[candidate["relationship_id"]] = candidate
+                        field_group[candidate["relation_type"]] = candidate
 
     reviewed_excluded = len(reviewed_excluded_keys)
-    candidates = list(candidates_by_relationship_id.values())
+    candidates: list[dict] = []
+    for field_group in candidate_groups.values():
+        for field in ("description", "title", "source_url"):
+            if field in field_group:
+                candidates.extend(field_group[field].values())
+                break
     candidates.sort(
         key=lambda item: (
             -item["score"],
