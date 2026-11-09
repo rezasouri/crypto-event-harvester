@@ -470,14 +470,15 @@ Run the report against the shared local database:
   and the complete normalized target location must occur in the same cue
   snippet. When no target location is known, at least two distinctive title
   anchors must occur in that snippet.
-- Description, title and source-URL cues are evaluated independently. Among
-  candidates that pass the target-match gate for the same event pair, source
-  field priority is description, then title, then source URL. This lets a URL
-  supply target evidence when a generic description cue does not match, while
-  preventing a weaker URL slug from creating a competing predicate when a
-  stronger description cue already identifies the target. Distinct predicates
-  supported by the selected field are retained; repeated same-predicate cues
-  are deduplicated.
+- Description, title and source-URL cues are evaluated independently.
+  Among candidates that pass the target-match gate for the same event pair,
+  source-field priority is description, then title, then source URL. The
+  strongest eligible field is selected before accepted/rejected review history
+  is applied. Therefore, a reviewed description cue cannot disappear and
+  expose a weaker URL predicate as a fallback. A URL can still supply target
+  evidence when a generic description cue fails the target-match gate.
+  Distinct predicates supported by the selected field are retained; repeated
+  same-predicate cues are deduplicated.
 - The deterministic score combines cue strength (40%), distinctive
   target-title coverage (35%), date overlap (15%) and location corroboration
   (10%). It is a ranking aid, not a probability or calibrated confidence
@@ -486,8 +487,9 @@ Run the report against the shared local database:
   revisions, source URLs, cue snippets, matched distinctive title anchors,
   match basis and score components.
 - Current accepted/rejected decisions for the same predicate, event pair and
-  exact revisions are excluded. A retracted relationship may be surfaced for
-  a fresh review.
+  exact revisions are excluded after source-field priority is selected. A
+  reviewed stronger-field cue suppresses weaker-field fallbacks for that pair.
+  A retracted relationship may be surfaced for a fresh review.
 
 ### Safety and interpretation
 
