@@ -98,6 +98,36 @@ _FIELD_STRENGTH = {
 }
 
 
+_RELATION_TARGET_GENERIC_TERMS = frozenset(
+    {
+        "annual",
+        "community",
+        "conference",
+        "convention",
+        "day",
+        "days",
+        "edition",
+        "event",
+        "events",
+        "expo",
+        "exhibition",
+        "festival",
+        "forum",
+        "global",
+        "international",
+        "meetup",
+        "meeting",
+        "summit",
+        "week",
+        "weeks",
+        "workshop",
+        "workshops",
+        "world",
+        "x",
+    }
+)
+
+
 def _url_text(value: object) -> str:
     if not isinstance(value, str) or not value:
         return ""
@@ -176,34 +206,48 @@ def _extract_relation_cues(item: dict) -> list[dict]:
     ]
 
 
-def _target_match(subject: dict, object_event: dict) -> dict | None:
-    """Require at least two meaningful target-title tokens in the subject text."""
-    target_tokens = _meaningful_tokens(object_event.get("title"))
-    if len(target_tokens) < 2:
-        return None
+def _target_match(subject: dict, object_event: dict, cue: dict) -> dict | None:
+    """Match distinctive conference-title anchors inside the relation cue itself.
 
-    subject_text = " ".join(
-        (
-            str(subject.get("title") or ""),
-            str(subject.get("description") or ""),
-            _url_text(subject.get("source_url")),
-        )
-    )
-    subject_tokens = _meaningful_tokens(subject_text) - _RELATION_WORDS
-    shared = sorted(target_tokens & subject_tokens)
-    coverage = len(shared) / len(target_tokens)
-    if len(shared) < 2 or coverage < 0.35:
-        return None
-
+    Generic event words, years and the target's own location are not considered
+    title anchors. When the target has a known location, at least one distinctive
+    title anchor and the full location must occur in the cue snippet. Without a
+    known location, two distinctive title anchors are required.
+    """
+    title_tokens = _meaningful_tokens(object_event.get("title"))
     location_tokens = _meaningful_tokens(object_event.get("location"))
-    location_mentioned = bool(location_tokens) and location_tokens <= subject_tokens
+    anchor_tokens = {
+        token
+        for token in title_tokens - _RELATION_TARGET_GENERIC_TERMS - location_tokens
+        if not token.isdigit()
+    }
+    if not anchor_tokens:
+        return None
+
+    cue_text = str(cue.get("snippet") or "")
+    cue_tokens = _meaningful_tokens(cue_text) - _RELATION_WORDS
+    shared = sorted(anchor_tokens & cue_tokens)
+    location_mentioned = bool(location_tokens) and location_tokens <= cue_tokens
+
+    if location_tokens:
+        if not location_mentioned or not shared:
+            return None
+        match_basis = "distinctive_title_anchor_and_location"
+    else:
+        if len(shared) < 2:
+            return None
+        match_basis = "multiple_distinctive_title_anchors"
+
+    coverage = len(shared) / len(anchor_tokens)
     return {
         "shared_tokens": shared,
-        "target_title_tokens": sorted(target_tokens),
+        "target_title_tokens": sorted(title_tokens),
+        "target_anchor_tokens": sorted(anchor_tokens),
         "target_title_coverage": round(coverage, 4),
         "location_mentioned": location_mentioned,
+        "match_basis": match_basis,
+        "match_scope": "relation_cue_snippet",
     }
-
 
 def _snapshot(item: dict, revision: int) -> dict:
     return {
@@ -396,11 +440,10 @@ def discover_relationship_candidates(
                 cues = _extract_relation_cues(subject)
                 if not cues:
                     continue
-                target = _target_match(subject, object_event)
-                if target is None:
-                    continue
-
                 for cue in cues:
+                    target = _target_match(subject, object_event, cue)
+                    if target is None:
+                        continue
                     key = (
                         subject["event_id"],
                         subject_revision,
@@ -459,7 +502,7 @@ def discover_relationship_candidates(
         "limitations": [
             "Scores are deterministic evidence-ranking values, not probabilities.",
             "Only explicit relation language and a dated conference target are considered.",
-            "The target title must share at least two meaningful tokens with the subject record text.",
+            "The target must match distinctive title anchors inside the relation-cue snippet; known target locations must also match.",
             "A candidate is not a verified relationship; human review is required.",
             "Only current source snapshots with explicit day or range dates are compared.",
         ],
