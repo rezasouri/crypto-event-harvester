@@ -505,7 +505,8 @@ def discover_relationship_candidates(
         "limitations": [
             "Scores are deterministic evidence-ranking values, not probabilities.",
             "Only explicit relation language and a dated conference target are considered.",
-            "The target must match distinctive title anchors inside the relation-cue snippet; known target locations must also match.",
+            "The target must match distinctive title anchors inside the relation-cue snippet; "
+            "known target locations must also match.",
             "A candidate is not a verified relationship; human review is required.",
             "Only current source snapshots with explicit day or range dates are compared.",
         ],
