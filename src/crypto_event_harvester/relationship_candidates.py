@@ -147,14 +147,14 @@ def _is_conference(item: dict) -> bool:
 
 
 def _extract_relation_cues(item: dict) -> list[dict]:
-    """Extract explicit, locally attributed relationship language."""
+    """Extract explicit, locally attributed cues from each source field."""
     project_tokens = _meaningful_tokens(item.get("project"))
     fields = (
         ("description", str(item.get("description") or "")),
         ("title", str(item.get("title") or "")),
         ("source_url", _url_text(item.get("source_url"))),
     )
-    best_by_relation: dict[str, dict] = {}
+    best_by_relation_and_field: dict[tuple[str, str], dict] = {}
 
     for field, text in fields:
         if not text:
@@ -189,24 +189,17 @@ def _extract_relation_cues(item: dict) -> list[dict]:
                         _FIELD_STRENGTH[field] * attribution_strength, 4
                     ),
                 }
-                previous = best_by_relation.get(relation_type)
+                key = (relation_type, field)
+                previous = best_by_relation_and_field.get(key)
                 if previous is None or cue["cue_strength"] > previous["cue_strength"]:
-                    best_by_relation[relation_type] = cue
+                    best_by_relation_and_field[key] = cue
 
-    if not best_by_relation:
-        return []
-    preferred_field = max(
-        (cue["field"] for cue in best_by_relation.values()),
-        key=lambda field: _FIELD_STRENGTH[field],
-    )
     return [
-        best_by_relation[key]
-        for key in sorted(best_by_relation)
-        if best_by_relation[key]["field"] == preferred_field
+        best_by_relation_and_field[key]
+        for key in sorted(best_by_relation_and_field)
     ]
 
-
-def _target_match(subject: dict, object_event: dict, cue: dict) -> dict | None:
+def _target_match(object_event: dict, cue: dict) -> dict | None:
     """Match distinctive conference-title anchors inside the relation cue itself.
 
     Generic event words, years and the target's own location are not considered
@@ -416,7 +409,8 @@ def discover_relationship_candidates(
     conference_count = sum(_is_conference(item) for item, _ in eligible)
     examined_pairs = 0
     reviewed_excluded = 0
-    candidates: list[dict] = []
+    candidates_by_relationship_id: dict[str, dict] = {}
+    reviewed_excluded_keys: set[tuple[str, int, str, int, str]] = set()
 
     for index, (left, left_revision) in enumerate(eligible):
         left_end = date.fromisoformat(left["end_date"])
@@ -441,7 +435,7 @@ def discover_relationship_candidates(
                 if not cues:
                     continue
                 for cue in cues:
-                    target = _target_match(subject, object_event, cue)
+                    target = _target_match(object_event, cue)
                     if target is None:
                         continue
                     key = (
@@ -466,10 +460,19 @@ def discover_relationship_candidates(
                     if candidate is None:
                         continue
                     if previous_decision in {"accepted", "rejected"}:
-                        reviewed_excluded += 1
+                        reviewed_excluded_keys.add(key)
                         continue
-                    candidates.append(candidate)
+                    previous_candidate = candidates_by_relationship_id.get(
+                        candidate["relationship_id"]
+                    )
+                    if (
+                        previous_candidate is None
+                        or candidate["score"] > previous_candidate["score"]
+                    ):
+                        candidates_by_relationship_id[candidate["relationship_id"]] = candidate
 
+    reviewed_excluded = len(reviewed_excluded_keys)
+    candidates = list(candidates_by_relationship_id.values())
     candidates.sort(
         key=lambda item: (
             -item["score"],
