@@ -245,31 +245,6 @@ def review_relationship(
                     timestamp,
                 ),
             )
-            if decision == "accepted":
-                conn.execute(
-                    "INSERT INTO event_relationships ("
-                    "relationship_id, subject_event_id, object_event_id, relation_type, "
-                    "subject_revision, object_revision, evidence_json, accepted_decision_id, "
-                    "created_at_utc, updated_at_utc"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-                    "ON CONFLICT(subject_event_id, object_event_id, relation_type) "
-                    "DO UPDATE SET subject_revision=excluded.subject_revision, "
-                    "object_revision=excluded.object_revision, evidence_json=excluded.evidence_json, "
-                    "accepted_decision_id=excluded.accepted_decision_id, "
-                    "updated_at_utc=excluded.updated_at_utc",
-                    (
-                        relation_id,
-                        subject_event_id,
-                        object_event_id,
-                        relation_type,
-                        subject_revision,
-                        object_revision,
-                        evidence_json,
-                        decision_id,
-                        timestamp,
-                        timestamp,
-                    ),
-                )
             return {
                 "status": decision,
                 "decision_id": decision_id,
@@ -328,10 +303,6 @@ def retract_relationship(
                     note,
                     timestamp,
                 ),
-            )
-            conn.execute(
-                "DELETE FROM event_relationships WHERE relationship_id=?",
-                (relationship_id,),
             )
             return {
                 "status": "retracted",
