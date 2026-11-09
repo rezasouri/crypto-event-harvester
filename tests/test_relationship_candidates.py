@@ -158,6 +158,42 @@ def test_attendance_language_maps_to_attends(tmp_path):
     assert report["candidates"][0]["evidence"]["relation_cue"]["mode"] == "attendee"
 
 
+@pytest.mark.parametrize("decision", ["accepted", "rejected"])
+def test_reviewed_description_cue_does_not_fall_back_to_weaker_url(
+    tmp_path, decision
+):
+    db = tmp_path / "events.sqlite"
+    subject, object_event = _seed(
+        db,
+        project="Makina",
+        subject_title="Devcon 8 in Mumbai",
+        description=(
+            "The Makina team will attend Devcon VIII, taking place from "
+            "November 3 to 6 at the Jio World Centre in Mumbai."
+        ),
+        source_url=(
+            "https://www.coindar.org/en/event/"
+            "makina-to-participate-in-devcon-8-in-mumbai-on-november-3"
+        ),
+    )
+    review_relationship(
+        db,
+        subject_event_id=subject.event_id,
+        object_event_id=object_event.event_id,
+        relation_type="attends",
+        decision=decision,
+        expected_subject_revision=1,
+        expected_object_revision=1,
+        evidence={"review": "human"},
+    )
+
+    report = discover_relationship_candidates(db)
+
+    assert report["candidates"] == []
+    assert report["candidates_total"] == 0
+    assert report["reviewed_candidates_excluded"] == 1
+
+
 def test_url_slug_can_supply_explicit_relationship_language(tmp_path):
     db = tmp_path / "events.sqlite"
     _seed(
