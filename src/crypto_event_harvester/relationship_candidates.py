@@ -493,7 +493,6 @@ def discover_relationship_candidates(
                     ):
                         field_group[candidate["relation_type"]] = candidate
 
-    reviewed_excluded = len(reviewed_excluded_keys)
     candidates: list[dict] = []
     for field_group in candidate_groups.values():
         for field in ("description", "title", "source_url"):
@@ -515,6 +514,7 @@ def discover_relationship_candidates(
                 else:
                     candidates.append(candidate)
             break
+    reviewed_excluded = len(reviewed_excluded_keys)
     candidates.sort(
         key=lambda item: (
             -item["score"],
