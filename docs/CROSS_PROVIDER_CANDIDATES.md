@@ -463,15 +463,23 @@ Run the report against the shared local database:
 - When project metadata exists, the project name must occur near the cue.
   This helps avoid assigning a role mentioned for another organization to
   the subject project.
-- The conference title must share at least two meaningful tokens with the
-  subject title, description or source URL, and target-title coverage must
-  be at least 0.35.
-- The deterministic score combines cue strength (40%), target-title coverage
-  (35%), date overlap (15%) and location corroboration (10%). It is a ranking
-  aid, not a probability or calibrated confidence estimate.
+- Target-title matching is evaluated against each relation-cue snippet
+  separately; generic event words, years and the target's own location are
+  excluded from distinctive title anchors.
+- When the target has a known location, at least one distinctive title anchor
+  and the complete normalized target location must occur in the same cue
+  snippet. When no target location is known, at least two distinctive title
+  anchors must occur in that snippet.
+- Description, title and source-URL cues are evaluated independently. If
+  multiple fields support the same directed relationship, only the strongest
+  candidate is returned; duplicate edges are not emitted.
+- The deterministic score combines cue strength (40%), distinctive
+  target-title coverage (35%), date overlap (15%) and location corroboration
+  (10%). It is a ranking aid, not a probability or calibrated confidence
+  estimate. The target-match gate runs before scoring.
 - Candidates include a stable candidate ID, the relationship ID, exact source
-  revisions, source URLs, cue snippets, shared title tokens and score
-  components.
+  revisions, source URLs, cue snippets, matched distinctive title anchors,
+  match basis and score components.
 - Current accepted/rejected decisions for the same predicate, event pair and
   exact revisions are excluded. A retracted relationship may be surfaced for
   a fresh review.
