@@ -183,6 +183,33 @@ def test_url_slug_can_supply_explicit_relationship_language(tmp_path):
     assert cue["mode"] == "participant"
 
 
+def test_representation_is_evidence_mode_not_a_speaking_claim(tmp_path):
+    db = tmp_path / "events.sqlite"
+    _seed(
+        db,
+        project="Bitget Token",
+        subject_title="Hong Kong FinTech Week in Hong Kong",
+        description=(
+            "Bitget Token will be represented by Gracy Chen at Hong Kong FinTech "
+            "Week on November 3rd."
+        ),
+        source_url="https://www.coindar.org/en/event/bitget-token-hong-kong-fintech-week",
+        object_title="Hong Kong FinTech Week x StartmeupHK Festival 2026",
+        object_location="Hong Kong",
+        subject_start="2026-11-03",
+        subject_end="2026-11-03",
+        object_start="2026-11-02",
+        object_end="2026-11-06",
+    )
+
+    report = discover_relationship_candidates(db)
+    assert report["candidates_total"] == 1
+    candidate = report["candidates"][0]
+    assert candidate["relation_type"] == "participates_in"
+    assert candidate["evidence"]["relation_cue"]["mode"] == "represented_by"
+    assert candidate["evidence"]["relation_cue"]["phrase"] == "represented by"
+
+
 def test_sponsor_mention_for_another_actor_is_not_attributed_to_project(tmp_path):
     db = tmp_path / "events.sqlite"
     _seed(
