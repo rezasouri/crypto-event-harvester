@@ -43,7 +43,7 @@ _CUE_PATTERNS = (
         "organizes",
         "organizer",
         re.compile(
-            r"\b(?:organize|organizes|organized|organizing|organiser|organiser|organizer|organizers)\b",
+            r"\b(?:organize|organizes|organized|organizing|organise|organises|organised|organising|organiser|organisers|organizer|organizers)\b",
             re.IGNORECASE,
         ),
     ),
@@ -164,7 +164,17 @@ def _extract_relation_cues(item: dict) -> list[dict]:
                 if previous is None or cue["cue_strength"] > previous["cue_strength"]:
                     best_by_relation[relation_type] = cue
 
-    return [best_by_relation[key] for key in sorted(best_by_relation)]
+    if not best_by_relation:
+        return []
+    preferred_field = max(
+        (cue["field"] for cue in best_by_relation.values()),
+        key=lambda field: _FIELD_STRENGTH[field],
+    )
+    return [
+        best_by_relation[key]
+        for key in sorted(best_by_relation)
+        if best_by_relation[key]["field"] == preferred_field
+    ]
 
 
 def _target_match(subject: dict, object_event: dict) -> dict | None:
