@@ -113,7 +113,9 @@ def test_discovers_participation_candidate_with_explainable_evidence(tmp_path):
     assert candidate["object"]["revision"] == 1
     assert candidate["score"] >= 0.60
     assert candidate["evidence"]["relation_cue"]["phrase"] == "participate"
-    assert candidate["evidence"]["target_match"]["shared_tokens"] == ["devcon", "mumbai"]
+    assert candidate["evidence"]["target_match"]["shared_tokens"] == ["devcon"]
+    assert candidate["evidence"]["target_match"]["match_scope"] == "relation_cue_snippet"
+    assert candidate["evidence"]["target_match"]["location_mentioned"] is True
     assert candidate["evidence"]["target_match"]["location_mentioned"] is True
     assert candidate["not_an_identity_decision"] is True
     assert report["source_requests"] == 0
@@ -235,6 +237,148 @@ def test_sponsor_mention_for_another_actor_is_not_attributed_to_project(tmp_path
     report = discover_relationship_candidates(db)
     assert report["candidates_total"] == 1
     assert report["candidates"][0]["relation_type"] == "participates_in"
+
+
+@pytest.mark.parametrize(
+    "subject_data,object_data",
+    [
+        (
+            {
+                "project": "Arbitrum",
+                "subject_title": "ArbiVerse Mumbai in Mumbai",
+                "description": (
+                    "Arbitrum will participate in ArbiVerse Mumbai in Mumbai, "
+                    "India, on November 2nd during Devcon 8 week."
+                ),
+                "source_url": (
+                    "https://www.coindar.org/en/event/"
+                    "arbitrum-to-participate-in-arbiverse-mumbai-in-mumbai"
+                ),
+                "subject_start": "2026-11-02",
+                "subject_end": "2026-11-02",
+            },
+            {
+                "object_title": "India Blockchain Week 2026 Conference",
+                "object_location": "Mumbai",
+                "object_start": "2026-11-01",
+                "object_end": "2026-11-02",
+            },
+        ),
+        (
+            {
+                "project": "Bitget Token",
+                "subject_title": "Hong Kong FinTech Week in Hong Kong",
+                "description": (
+                    "Bitget Token will be represented by Gracy Chen at "
+                    "Hong Kong FinTech Week on November 3rd."
+                ),
+                "source_url": "https://www.coindar.org/en/event/bitget-token-hong-kong-fintech-week",
+                "subject_start": "2026-11-03",
+                "subject_end": "2026-11-03",
+            },
+            {
+                "object_title": "Devcon Hong Kong Community Convention",
+                "object_location": "Hong Kong",
+                "object_start": "2026-11-03",
+                "object_end": "2026-11-03",
+            },
+        ),
+        (
+            {
+                "project": "Espresso",
+                "subject_title": "Hong Kong FinTech Week in Hong Kong",
+                "description": (
+                    "Espresso will participate in Hong Kong Fintech Week "
+                    "in Hong Kong on November 3rd."
+                ),
+                "source_url": "https://www.coindar.org/en/event/espresso-hong-kong-fintech-week",
+                "subject_start": "2026-11-03",
+                "subject_end": "2026-11-03",
+            },
+            {
+                "object_title": "Devcon Hong Kong Community Convention",
+                "object_location": "Hong Kong",
+                "object_start": "2026-11-03",
+                "object_end": "2026-11-03",
+            },
+        ),
+        (
+            {
+                "project": "Verified Emeralds",
+                "subject_title": "India Blockchain Week 2026 in Mumbai",
+                "description": (
+                    "Verified Emeralds will participate in India Blockchain "
+                    "Week 2026 in Mumbai on November 1st–2nd."
+                ),
+                "source_url": "https://www.coindar.org/en/event/verified-emeralds-india-blockchain-week",
+                "subject_start": "2026-11-01",
+                "subject_end": "2026-11-01",
+            },
+            {
+                "object_title": "DeFi Security Summit 2026 Mumbai",
+                "object_location": "Mumbai",
+                "object_start": "2026-11-01",
+                "object_end": "2026-11-02",
+            },
+        ),
+        (
+            {
+                "project": "HashKey Platform Token",
+                "subject_title": "Hong Kong FinTech Week x StartmeupHK 2026 in Hong Kong",
+                "description": (
+                    "HashKey Platform Token will take part in Hong Kong "
+                    "FinTech Week x StartmeupHK 2026 as HashKey Group returns "
+                    "as a Gold Sponsor."
+                ),
+                "source_url": (
+                    "https://www.coindar.org/en/event/"
+                    "hashkey-platform-token-to-participate-in-hong-kong-fintech-week-2026"
+                ),
+                "subject_start": "2026-11-02",
+                "subject_end": "2026-11-02",
+            },
+            {
+                "object_title": "Dubai FinTech Summit 2026",
+                "object_location": "Dubai",
+                "object_start": "2026-11-02",
+                "object_end": "2026-11-03",
+            },
+        ),
+        (
+            {
+                "project": "HashKey Platform Token",
+                "subject_title": "Hong Kong FinTech Week x StartmeupHK 2026 in Hong Kong",
+                "description": (
+                    "HashKey Platform Token will take part in Hong Kong "
+                    "FinTech Week x StartmeupHK 2026 as HashKey Group returns "
+                    "as a Gold Sponsor."
+                ),
+                "source_url": (
+                    "https://www.coindar.org/en/event/"
+                    "hashkey-platform-token-to-participate-in-hong-kong-fintech-week-2026"
+                ),
+                "subject_start": "2026-11-02",
+                "subject_end": "2026-11-02",
+            },
+            {
+                "object_title": "India Blockchain Week 2026 Conference",
+                "object_location": "Mumbai",
+                "object_start": "2026-11-01",
+                "object_end": "2026-11-02",
+            },
+        ),
+    ],
+)
+def test_rejects_shared_generic_tokens_without_target_identity(
+    tmp_path, subject_data, object_data
+):
+    db = tmp_path / "events.sqlite"
+    _seed(db, **subject_data, **object_data)
+
+    report = discover_relationship_candidates(db)
+
+    assert report["candidates"] == []
+    assert report["candidates_total"] == 0
 
 
 def test_current_accepted_or_rejected_pair_is_not_resuggested(tmp_path):
