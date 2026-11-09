@@ -161,3 +161,24 @@ append-only decision history. Accepted edges are a current projection;
 retractions are audited and stale source snapshots require re-review. No
 automatic edge creation, source requests or source-row mutation. SQLite
 schema version 3 migrates additively to version 4.
+
+## Gate 22 status — deterministic semantic relationship candidate discovery
+
+Adds a read-only relationship candidate report over current, dated
+cross-provider event snapshots. A candidate requires an explicit relationship
+cue in the subject record, a conference target, overlapping calendar dates,
+and at least two meaningful target-title tokens found in the subject title,
+description or source URL. Project-name proximity is used to avoid attributing
+a role mentioned for a different organization to the subject project.
+
+The report ranks candidates with an explainable deterministic evidence score;
+the score is not a probability. It includes exact source revisions, cue
+location and snippet, target-title token overlap, date relation and location
+corroboration. Current accepted/rejected decisions for the same relationship
+and exact revisions are not suggested again. Retracted decisions remain
+visible for a fresh human review.
+
+No relationship is created automatically. No canonical identity, source
+event, revision history or decision history is modified. The command makes no
+network requests and does not migrate older databases. See the Gate 22 section
+in CROSS_PROVIDER_CANDIDATES.md.
