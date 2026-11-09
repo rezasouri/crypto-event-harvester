@@ -464,15 +464,20 @@ Run the report against the shared local database:
   This helps avoid assigning a role mentioned for another organization to
   the subject project.
 - Target-title matching is evaluated against each relation-cue snippet
-  separately; generic event words, years and the target's own location are
-  excluded from distinctive title anchors.
+  separately; generic event words, years, country/geographic terms and the
+  target's own location are excluded from distinctive title anchors.
 - When the target has a known location, at least one distinctive title anchor
   and the complete normalized target location must occur in the same cue
   snippet. When no target location is known, at least two distinctive title
   anchors must occur in that snippet.
-- Description, title and source-URL cues are evaluated independently. If
-  multiple fields support the same directed relationship, only the strongest
-  candidate is returned; duplicate edges are not emitted.
+- Description, title and source-URL cues are evaluated independently. Among
+  candidates that pass the target-match gate for the same event pair, source
+  field priority is description, then title, then source URL. This lets a URL
+  supply target evidence when a generic description cue does not match, while
+  preventing a weaker URL slug from creating a competing predicate when a
+  stronger description cue already identifies the target. Distinct predicates
+  supported by the selected field are retained; repeated same-predicate cues
+  are deduplicated.
 - The deterministic score combines cue strength (40%), distinctive
   target-title coverage (35%), date overlap (15%) and location corroboration
   (10%). It is a ranking aid, not a probability or calibrated confidence
