@@ -184,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     relationship.add_argument("--db", required=True, type=Path)
     relationship.add_argument(
         "--action",
-        choices=("status", "list", "history", "accept", "reject", "retract"),
+        choices=("status", "list", "history", "candidates", "accept", "reject", "retract"),
         required=True,
     )
     relationship.add_argument("--subject-event-id")
@@ -206,6 +206,12 @@ def build_parser() -> argparse.ArgumentParser:
     relationship.add_argument("--event-id", help="Filter relationship history by source event ID")
     relationship.add_argument("--note")
     relationship.add_argument("--limit", type=int, default=100)
+    relationship.add_argument(
+        "--min-score",
+        type=float,
+        default=0.60,
+        help="Minimum deterministic evidence score for review-only candidate discovery",
+    )
 
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
@@ -547,6 +553,7 @@ def _reconcile(args) -> int:
 
 
 def _relationship(args) -> int:
+    from .relationship_candidates import discover_relationship_candidates
     from .relationships import (
         list_relationships,
         relationship_history,
@@ -556,7 +563,11 @@ def _relationship(args) -> int:
     )
 
     try:
-        if args.action == "status":
+        if args.action == "candidates":
+            result = discover_relationship_candidates(
+                args.db, limit=args.limit, min_score=args.min_score
+            )
+        elif args.action == "status":
             result = relationship_status(args.db)
         elif args.action == "list":
             result = list_relationships(
