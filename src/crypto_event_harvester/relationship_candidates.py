@@ -11,7 +11,6 @@ import hashlib
 import json
 import math
 import re
-import sqlite3
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -410,9 +409,6 @@ def discover_relationship_candidates(
                         cue["relation_type"],
                     )
                     previous_decision = reviewed.get(key)
-                    if previous_decision in {"accepted", "rejected"}:
-                        reviewed_excluded += 1
-                        continue
                     candidate = _candidate(
                         subject,
                         subject_revision,
@@ -422,10 +418,14 @@ def discover_relationship_candidates(
                         target,
                         date_evidence,
                         min_score,
-                        previous_decision,
+                        previous_decision if previous_decision == "retracted" else None,
                     )
-                    if candidate is not None:
-                        candidates.append(candidate)
+                    if candidate is None:
+                        continue
+                    if previous_decision in {"accepted", "rejected"}:
+                        reviewed_excluded += 1
+                        continue
+                    candidates.append(candidate)
 
     candidates.sort(
         key=lambda item: (
