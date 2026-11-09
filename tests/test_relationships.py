@@ -296,6 +296,11 @@ def test_sqlite_guards_require_review_actions_and_keep_history_append_only(tmp_p
         )
     with pytest.raises(sqlite3.IntegrityError, match="latest accepted review decision"):
         conn.execute(
+            "UPDATE event_relationships SET evidence_json='{}' WHERE relationship_id=?",
+            (accepted["relationship_id"],),
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="latest accepted review decision"):
+        conn.execute(
             "INSERT INTO event_relationships ("
             "relationship_id, subject_event_id, object_event_id, relation_type, "
             "subject_revision, object_revision, evidence_json, accepted_decision_id, "
