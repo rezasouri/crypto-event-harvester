@@ -177,6 +177,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum reviewed pair revisions required for an evaluation status of evaluated",
     )
 
+    relationship = subcommands.add_parser(
+        "relationship",
+        help="Review and inspect directed semantic relationships between source event records",
+    )
+    relationship.add_argument("--db", required=True, type=Path)
+    relationship.add_argument(
+        "--action",
+        choices=("status", "list", "history", "accept", "reject", "retract"),
+        required=True,
+    )
+    relationship.add_argument("--subject-event-id")
+    relationship.add_argument("--object-event-id")
+    relationship.add_argument("--relationship-id")
+    relationship.add_argument(
+        "--relation-type",
+        choices=(
+            "participates_in", "sponsors", "speaks_at", "organizes",
+            "attends", "exhibits_at", "related_to",
+        ),
+    )
+    relationship.add_argument("--subject-revision", type=int)
+    relationship.add_argument("--object-revision", type=int)
+    relationship.add_argument(
+        "--evidence-json",
+        help="Optional JSON object containing reviewer-supplied evidence",
+    )
+    relationship.add_argument("--event-id", help="Filter relationship history by source event ID")
+    relationship.add_argument("--note")
+    relationship.add_argument("--limit", type=int, default=100)
+
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
     store.add_argument("--db", required=True, type=Path, help="Existing SQLite database path")
     store.add_argument("--action", choices=("status", "list", "history"), default="status")
@@ -516,6 +546,78 @@ def _reconcile(args) -> int:
         return 2
 
 
+def _relationship(args) -> int:
+    from .relationships import (
+        list_relationships,
+        relationship_history,
+        relationship_status,
+        retract_relationship,
+        review_relationship,
+    )
+
+    try:
+        if args.action == "status":
+            result = relationship_status(args.db)
+        elif args.action == "list":
+            result = list_relationships(
+                args.db,
+                subject_event_id=args.subject_event_id,
+                object_event_id=args.object_event_id,
+                relation_type=args.relation_type,
+                limit=args.limit,
+            )
+        elif args.action == "history":
+            result = relationship_history(
+                args.db,
+                relationship_id=args.relationship_id,
+                event_id=args.event_id,
+                limit=args.limit,
+            )
+        elif args.action == "retract":
+            if not args.relationship_id:
+                raise ValueError("retract requires --relationship-id")
+            result = retract_relationship(
+                args.db, relationship_id=args.relationship_id, note=args.note
+            )
+        else:
+            if not args.subject_event_id or not args.object_event_id or not args.relation_type:
+                raise ValueError("accept/reject require subject ID, object ID and relation type")
+            evidence = None
+            if args.evidence_json is not None:
+                evidence = json.loads(args.evidence_json)
+                if not isinstance(evidence, dict):
+                    raise ValueError("--evidence-json must decode to a JSON object")
+            result = review_relationship(
+                args.db,
+                subject_event_id=args.subject_event_id,
+                object_event_id=args.object_event_id,
+                relation_type=args.relation_type,
+                decision="accepted" if args.action == "accept" else "rejected",
+                expected_subject_revision=args.subject_revision,
+                expected_object_revision=args.object_revision,
+                evidence=evidence,
+                note=args.note,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    except (
+        OSError, ValueError, RuntimeError, json.JSONDecodeError, sqlite3.DatabaseError
+    ) as exc:
+        message = str(exc)
+        print(
+            json.dumps(
+                {
+                    "status": "conflict" if message.startswith("conflict:") else "error",
+                    "action": args.action,
+                    "error": message,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 2
+
+
 def _audit(args) -> int:
     from .pilot_evaluation import audit_source, compare_audits
 
@@ -609,6 +711,8 @@ def main(argv: list[str] | None = None) -> int:
         return _store(args)
     if args.command == "reconcile":
         return _reconcile(args)
+    if args.command == "relationship":
+        return _relationship(args)
     if args.command == "backfill":
         return _backfill(args)
     if args.command == "sources":
