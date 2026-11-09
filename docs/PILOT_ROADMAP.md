@@ -168,11 +168,14 @@ Adds a read-only relationship candidate report over current, dated
 cross-provider event snapshots. A candidate requires an explicit relationship
 cue in the subject record, a conference target, overlapping calendar dates,
 and distinctive target-title anchors found in the same relation-cue snippet.
-Generic event terms, years and the target location are excluded from anchors.
+Generic event terms, years, country/geographic terms and the target location
+are excluded from anchors.
 When the target location is known, the complete location must also occur in
 that snippet; without a known location, at least two distinctive anchors are
-required. Description, title and URL cues are evaluated independently, then
-deduplicated by directed relationship. Project-name proximity is used to
+required. Description, title and URL cues are evaluated independently;
+among candidates passing the target gate for the same event pair, description
+has priority over title, which has priority over URL. Repeated same-predicate
+cues are deduplicated. Project-name proximity is used to
 avoid attributing a role mentioned for a different organization to the subject
 project.
 
