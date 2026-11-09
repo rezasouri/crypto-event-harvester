@@ -479,9 +479,6 @@ def discover_relationship_candidates(
                     )
                     if candidate is None:
                         continue
-                    if previous_decision in {"accepted", "rejected"}:
-                        reviewed_excluded_keys.add(key)
-                        continue
                     pair_key = (
                         subject["event_id"],
                         object_event["event_id"],
@@ -500,9 +497,24 @@ def discover_relationship_candidates(
     candidates: list[dict] = []
     for field_group in candidate_groups.values():
         for field in ("description", "title", "source_url"):
-            if field in field_group:
-                candidates.extend(field_group[field].values())
-                break
+            if field not in field_group:
+                continue
+            # Choose the strongest source field before applying review history.
+            # Otherwise an accepted/rejected description cue could disappear
+            # and incorrectly fall back to a weaker URL predicate.
+            for candidate in field_group[field].values():
+                key = (
+                    candidate["subject"]["event_id"],
+                    candidate["subject"]["revision"],
+                    candidate["object"]["event_id"],
+                    candidate["object"]["revision"],
+                    candidate["relation_type"],
+                )
+                if reviewed.get(key) in {"accepted", "rejected"}:
+                    reviewed_excluded_keys.add(key)
+                else:
+                    candidates.append(candidate)
+            break
     candidates.sort(
         key=lambda item: (
             -item["score"],
