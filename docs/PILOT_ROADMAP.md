@@ -174,8 +174,10 @@ When the target location is known, the complete location must also occur in
 that snippet; without a known location, at least two distinctive anchors are
 required. Description, title and URL cues are evaluated independently;
 among candidates passing the target gate for the same event pair, description
-has priority over title, which has priority over URL. Repeated same-predicate
-cues are deduplicated. Project-name proximity is used to
+has priority over title, which has priority over URL. Source-field priority is
+selected before accepted/rejected review filtering, so a reviewed stronger
+cue cannot fall back to a weaker URL predicate. Repeated same-predicate cues
+are deduplicated. Project-name proximity is used to
 avoid attributing a role mentioned for a different organization to the subject
 project.
 
