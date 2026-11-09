@@ -153,6 +153,7 @@ def test_attendance_language_maps_to_attends(tmp_path):
 
     report = discover_relationship_candidates(db)
     assert report["candidates_total"] == 1
+    assert report["candidates_by_relation_type"] == {"attends": 1}
     assert report["candidates"][0]["relation_type"] == "attends"
     assert report["candidates"][0]["evidence"]["relation_cue"]["mode"] == "attendee"
 
