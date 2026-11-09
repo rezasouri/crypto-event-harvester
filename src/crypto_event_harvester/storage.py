@@ -343,7 +343,8 @@ BEGIN
 END;
 CREATE TRIGGER IF NOT EXISTS trg_relationship_edge_update_requires_decision
 BEFORE UPDATE ON event_relationships
-WHEN NOT EXISTS (
+WHEN NEW.accepted_decision_id = OLD.accepted_decision_id
+ OR NOT EXISTS (
     SELECT 1 FROM event_relationship_decisions d
     WHERE d.decision_id = NEW.accepted_decision_id
       AND d.relationship_id = NEW.relationship_id
@@ -366,6 +367,35 @@ WHEN NOT EXISTS (
 )
 BEGIN
     SELECT RAISE(ABORT, 'relationship edge update requires its latest accepted review decision');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decision_projects_accepted_edge
+AFTER INSERT ON event_relationship_decisions
+WHEN NEW.decision = 'accepted'
+BEGIN
+    INSERT INTO event_relationships (
+        relationship_id, subject_event_id, object_event_id, relation_type,
+        subject_revision, object_revision, evidence_json, accepted_decision_id,
+        created_at_utc, updated_at_utc
+    ) VALUES (
+        NEW.relationship_id, NEW.subject_event_id, NEW.object_event_id, NEW.relation_type,
+        NEW.subject_revision, NEW.object_revision, NEW.evidence_json, NEW.decision_id,
+        NEW.decided_at_utc, NEW.decided_at_utc
+    )
+    ON CONFLICT(subject_event_id, object_event_id, relation_type)
+    DO UPDATE SET
+        subject_revision=excluded.subject_revision,
+        object_revision=excluded.object_revision,
+        evidence_json=excluded.evidence_json,
+        accepted_decision_id=excluded.accepted_decision_id,
+        updated_at_utc=excluded.updated_at_utc;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_relationship_decision_projects_retraction
+AFTER INSERT ON event_relationship_decisions
+WHEN NEW.decision = 'retracted'
+BEGIN
+    DELETE FROM event_relationships
+    WHERE relationship_id = NEW.relationship_id
+      AND accepted_decision_id = NEW.supersedes_decision_id;
 END;
 CREATE TRIGGER IF NOT EXISTS trg_relationship_edge_delete_requires_retraction
 BEFORE DELETE ON event_relationships
