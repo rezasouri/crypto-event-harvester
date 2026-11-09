@@ -597,7 +597,7 @@ def test_version_two_migration_preserves_existing_canonical_state(tmp_path):
 
     assert reconciliation_status(db)["canonical_events"] == 1
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
     assert conn.execute(
         "SELECT * FROM canonical_event_members ORDER BY event_id"
     ).fetchall() == before_members
