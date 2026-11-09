@@ -138,3 +138,13 @@ before writes; per-row conflicts and stale rows are reported explicitly.
 No new schema, source requests, paid APIs or automatic merges are introduced.
 Imported labels feed the Gate 17 retrospective quality evaluator. See
 [CROSS_PROVIDER_CANDIDATES.md](CROSS_PROVIDER_CANDIDATES.md).
+
+## Gate 19 status — coverage diagnosis and relation hints
+
+Introduce read-only matching diagnostics before modifying matching thresholds.
+Compare metadata availability by provider and classify the first strict-matching
+blocker for each overlapping cross-provider date pair. Report potentially
+related records separately from canonical identity candidates, highlighting
+conference participation/mention signals and city corroboration. Preserve
+existing strict identity decisions, Gate 18 import eligibility, append-only
+history and source tables. No new schema, network access or auto-merging.
