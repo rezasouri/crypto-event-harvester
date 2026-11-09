@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS event_relationship_decisions (
 );
 CREATE INDEX IF NOT EXISTS ix_relationship_decisions_pair
     ON event_relationship_decisions(
-        relationship_id, subject_revision, object_revision, rowid
+        relationship_id, subject_revision, object_revision, relation_type
     );
 CREATE INDEX IF NOT EXISTS ix_relationship_decisions_subject
     ON event_relationship_decisions(subject_event_id, decided_at_utc);
