@@ -179,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     relationship = subcommands.add_parser(
         "relationship",
-        help="Review and inspect directed semantic relationships between source event records",
+        help="Review, analyze and export directed semantic relationships between source events",
     )
     relationship.add_argument("--db", required=True, type=Path)
     relationship.add_argument(
@@ -588,6 +588,8 @@ def _relationship(args) -> int:
     )
 
     try:
+        if args.format != "json" and args.action != "export":
+            raise ValueError("--format applies only to --action export")
         if args.action == "candidates":
             result = discover_relationship_candidates(
                 args.db, limit=args.limit, min_score=args.min_score
@@ -610,14 +612,10 @@ def _relationship(args) -> int:
                 limit=args.limit,
             )
         elif args.action == "analytics":
-            if args.format != "json":
-                raise ValueError("--format applies only to --action export")
             result = relationship_graph_analytics(args.db, limit=args.limit)
         elif args.action == "neighborhood":
             if not args.event_id:
                 raise ValueError("neighborhood requires --event-id")
-            if args.format != "json":
-                raise ValueError("--format applies only to --action export")
             result = relationship_neighborhood(
                 args.db,
                 event_id=args.event_id,
