@@ -394,7 +394,11 @@ def evaluate_relationship_quality(
             and edge["object_revision"] == label_row["object_revision"]
         )
         if edge is not None and not edge_matches_revision:
-            projection = "superseded_by_newer_revision"
+            if stale:
+                projection = "superseded_by_newer_revision"
+            else:
+                issues.append("active_edge_revision_mismatch")
+                projection = "mismatch"
         elif latest_action["decision"] == "accepted":
             if edge is None and not stale:
                 issues.append("accepted_edge_missing")
@@ -479,13 +483,21 @@ def evaluate_relationship_quality(
     accepted_count = sum(item["label"] == "accepted" for item in reviewed)
     rejected_count = sum(item["label"] == "rejected" for item in reviewed)
     scoreable_count = len(scores)
+    scoreable_accepted = len(score_by_label["accepted"])
+    scoreable_rejected = len(score_by_label["rejected"])
+    score_coverage = _ratio(scoreable_count, reviewed_count)
+    minimum_score_coverage = 0.5
     if reviewed_count == 0:
         status = "no_reviewed_relationships"
     elif reviewed_count < min_reviewed_pairs:
         status = "insufficient_reviewed_sample"
-    elif not accepted_count or not rejected_count:
+    elif not scoreable_accepted or not scoreable_rejected:
         status = "insufficient_class_diversity"
-    elif scoreable_count < min_reviewed_pairs:
+    elif (
+        scoreable_count < min_reviewed_pairs
+        or score_coverage is None
+        or score_coverage < minimum_score_coverage
+    ):
         status = "insufficient_score_coverage"
     else:
         status = "evaluated"
@@ -526,7 +538,13 @@ def evaluate_relationship_quality(
         "rejected_label_count": rejected_count,
         "retracted_action_count": decisions_by_status["retracted"],
         "minimum_reviewed_pairs_for_evaluation": min_reviewed_pairs,
-        "candidate_score_coverage": _ratio(scoreable_count, reviewed_count),
+        "candidate_score_coverage": score_coverage,
+        "candidate_score_sample_size": scoreable_count,
+        "scoreable_label_counts": {
+            "accepted": scoreable_accepted,
+            "rejected": scoreable_rejected,
+        },
+        "minimum_candidate_score_coverage": minimum_score_coverage,
         "candidate_score_summary_by_label": score_summary,
         "candidate_threshold_sweep": threshold_sweep,
         "evidence_quality_counts": dict(sorted(quality_counts.items())),
@@ -545,12 +563,30 @@ def evaluate_relationship_quality(
         "source_events_modified": 0,
         "canonical_identity_modified": False,
         "limitations": [
-            "Reviewed relationships are selected by prior candidate generation or manual review and are not a random sample.",
-            "Human decisions are labels for retrospective comparison, not independently verified ground truth.",
-            "Candidate scores are deterministic ranking evidence, not probabilities or calibrated confidence.",
-            "The current candidate rules are applied retrospectively to immutable historical source revisions.",
-            "Threshold metrics use only reviewed relationships for which the current candidate rules produce a score.",
-            "Evidence completeness measures recorded audit fields; it does not prove that a reviewer claim is true.",
+            (
+                "Reviewed relationships are selected by prior candidate generation "
+                "or manual review and are not a random sample."
+            ),
+            (
+                "Human decisions are labels for retrospective comparison, "
+                "not independently verified ground truth."
+            ),
+            (
+                "Candidate scores are deterministic ranking evidence, "
+                "not probabilities or calibrated confidence."
+            ),
+            (
+                "Current candidate rules are applied retrospectively to "
+                "immutable historical source revisions."
+            ),
+            (
+                "Threshold metrics use only reviewed relationships for which "
+                "the current candidate rules produce a score."
+            ),
+            (
+                "Evidence completeness measures recorded audit fields; "
+                "it does not prove that a reviewer claim is true."
+            ),
             "Retractions are lifecycle actions and are not treated as negative labels.",
         ],
     }
