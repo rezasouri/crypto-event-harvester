@@ -396,3 +396,28 @@ read-only, issue no source requests and do not migrate the database. See
 [relationship graph analytics](
 docs/CROSS_PROVIDER_CANDIDATES.md#gate-23--read-only-relationship-graph-analytics-and-export
 ).
+
+
+## Gate 24 — relationship quality evaluation
+
+Evaluate human-reviewed relationship labels and the completeness of their
+supporting audit evidence:
+
+~~~bash
+uv run crypto-harvester relationship \
+  --db data/harvest.sqlite \
+  --action evaluate \
+  --thresholds 0.60 0.70 0.80 0.90 \
+  --min-reviewed-pairs 30 \
+  --limit 100
+~~~
+
+The report replays deterministic candidate evidence against immutable source
+revisions, compares score thresholds with accepted/rejected human labels, and
+audits reviewer basis, source URLs, notes, snapshot consistency and stale
+revisions. Retractions remain lifecycle actions, not negative labels.
+Threshold metrics apply only to the reviewed, scoreable subset. Scores are
+not probabilities or calibrated confidence; evidence grades describe
+recorded audit completeness, not factual truth. The operation is read-only
+and makes no source requests or database migrations. See
+[relationship quality evaluation](docs/CROSS_PROVIDER_CANDIDATES.md#gate-24--relationship-quality-and-retrospective-evidence-evaluation).
