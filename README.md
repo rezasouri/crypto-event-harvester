@@ -393,4 +393,6 @@ Only accepted edges with current source revisions are included; stale edges
 are reported separately. Paths describe graph connectivity and do not infer
 transitive semantic relationships. Analytics, traversal and export are
 read-only, issue no source requests and do not migrate the database. See
-[relationship graph analytics](docs/CROSS_PROVIDER_CANDIDATES.md#gate-23--read-only-relationship-graph-analytics-and-export).
+[relationship graph analytics](
+docs/CROSS_PROVIDER_CANDIDATES.md#gate-23--read-only-relationship-graph-analytics-and-export
+).
