@@ -186,7 +186,7 @@ def test_retraction_is_a_lifecycle_action_not_a_negative_label(tmp_path):
     retract_relationship(db, relationship_id=relation_id, note="Reviewer withdrew claim.")
 
     report = evaluate_relationship_quality(db, min_reviewed_pairs=1)
-    finding = report["findings"][0] if report["findings"] else None
+    finding = report["reviewed_relationships"][0]
 
     assert report["accepted_label_count"] == 1
     assert report["rejected_label_count"] == 0
@@ -257,12 +257,12 @@ def test_newer_accepted_revision_supersedes_old_review_without_false_audit_error
     report = evaluate_relationship_quality(db, min_reviewed_pairs=1)
     old = next(
         item
-        for item in report["findings"]
+        for item in report["reviewed_relationships"]
         if item["subject_revision"] == 1
     )
     current = next(
         item
-        for item in report["findings"]
+        for item in report["reviewed_relationships"]
         if item["subject_revision"] == 2
     )
 
