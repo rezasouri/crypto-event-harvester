@@ -425,3 +425,22 @@ and makes no source requests or database migrations. See
 [relationship quality evaluation](
 docs/CROSS_PROVIDER_CANDIDATES.md#gate-24--relationship-quality-and-retrospective-evidence-evaluation
 ).
+
+
+## Gate 25 — temporal relationship history
+
+Inspect the recorded history of a relationship or reconstruct the graph at a
+UTC instant without accessing future source observations:
+
+~~~bash
+uv run crypto-harvester relationship --db data/harvest.sqlite \
+  --action timeline --event-id coindar:155698
+
+uv run crypto-harvester relationship --db data/harvest.sqlite \
+  --action as-of --at-utc 2026-11-02T12:00:00Z --limit 100
+~~~
+
+Historical state is reconstructed from stored human decision timestamps and
+source revision observation timestamps. Event schedule dates are not edge
+validity dates. These commands are read-only and cannot infer future or
+indirect relationships. See [Gate 25 documentation](docs/CROSS_PROVIDER_CANDIDATES.md).
