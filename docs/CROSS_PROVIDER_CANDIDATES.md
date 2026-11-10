@@ -437,3 +437,71 @@ Schema version 3 migrates additively to version 4. Existing source events,
 revision history, canonical identities and reconciliation decisions are
 preserved. The graph is a manually curated knowledge layer, not an inferred
 ground-truth dataset or an automatic merge mechanism.
+
+## Gate 22 — deterministic semantic relationship candidate discovery
+
+Gate 22 adds a read-only discovery operation to the separate semantic
+relationship graph. It does not change canonical event identity matching.
+
+Run the report against the shared local database:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action candidates
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action candidates --min-score 0.70 --limit 50
+
+### Candidate rules and evidence
+
+- Only current source snapshots with explicit day or range dates are eligible.
+- Candidate pairs must come from different providers and have overlapping
+  calendar dates.
+- The object must be a conference record; the subject is the other source
+  record carrying the relationship assertion.
+- Relationship cues are extracted from the subject description, title and
+  source URL. Supported cues map to the existing predicates:
+  participates_in, attends, speaks_at, sponsors, organizes and exhibits_at.
+- A represented-by phrase is retained as cue mode evidence under
+  participates_in; it is not silently upgraded into a speaking claim.
+- When project metadata exists, the project name must occur near the cue.
+  This helps avoid assigning a role mentioned for another organization to
+  the subject project.
+- Target-title matching is evaluated against each relation-cue snippet
+  separately; generic event words, years, country/geographic terms and the
+  target's own location are excluded from distinctive title anchors.
+- When the target has a known location, at least one distinctive title anchor
+  and the complete normalized target location must occur in the same cue
+  snippet. When no target location is known, at least two distinctive title
+  anchors must occur in that snippet.
+- Description, title and source-URL cues are evaluated independently.
+  Among candidates that pass the target-match gate for the same event pair,
+  source-field priority is description, then title, then source URL. The
+  strongest eligible field is selected before accepted/rejected review history
+  is applied. Therefore, a reviewed description cue cannot disappear and
+  expose a weaker URL predicate as a fallback. A URL can still supply target
+  evidence when a generic description cue fails the target-match gate.
+  Distinct predicates supported by the selected field are retained; repeated
+  same-predicate cues are deduplicated.
+- The deterministic score combines cue strength (40%), distinctive
+  target-title coverage (35%), date overlap (15%) and location corroboration
+  (10%). It is a ranking aid, not a probability or calibrated confidence
+  estimate. The target-match gate runs before scoring.
+- Candidates include a stable candidate ID, the relationship ID, exact source
+  revisions, source URLs, cue snippets, matched distinctive title anchors,
+  match basis and score components.
+- Current accepted/rejected decisions for the same predicate, event pair and
+  exact revisions are excluded after source-field priority is selected. A
+  reviewed stronger-field cue suppresses weaker-field fallbacks for that pair.
+  A retracted relationship may be surfaced for a fresh review.
+
+### Safety and interpretation
+
+The command opens SQLite in query-only mode. It does not create or accept
+relationships, alter the graph, mutate source events or revisions, change
+canonical memberships, or append review decisions. It makes no HTTP requests
+and does not run schema migrations. All returned rows have
+status=review_required and require a human decision through the existing
+relationship accept/reject commands.
+
+A candidate is not an identity match. In particular, a project participation
+record and the conference record remain distinct source events connected only
+by a directed semantic relationship after human approval. Scores and lexical
+overlap cannot establish that a claim is true; reviewers should inspect the
+source URL and cue snippet before accepting.
