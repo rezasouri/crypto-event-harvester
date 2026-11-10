@@ -490,9 +490,10 @@ def evaluate_relationship_quality(
     else:
         status = "evaluated"
 
-    findings = [
-        item for item in reviewed if item["issues"]
-    ]
+    reviewed.sort(
+        key=lambda item: (item["decided_at_utc"], item["relationship_id"])
+    )
+    findings = [item for item in reviewed if item["issues"]]
     findings.sort(
         key=lambda item: (
             -len(item["issues"]),
@@ -533,6 +534,8 @@ def evaluate_relationship_quality(
         "audit_issue_counts": dict(sorted(audit_issue_counts.items())),
         "reviewed_by_relation_type": dict(sorted(relation_counts.items())),
         "provider_pair_counts": dict(sorted(provider_pair_counts.items())),
+        "reviewed_relationships": reviewed[:limit],
+        "reviewed_relationships_returned": min(reviewed_count, limit),
         "findings_total": len(findings),
         "findings": findings[:limit],
         "score_kind": "deterministic_evidence_ranking_not_probability",
