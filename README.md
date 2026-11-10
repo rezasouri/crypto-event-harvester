@@ -420,4 +420,6 @@ Threshold metrics apply only to the reviewed, scoreable subset. Scores are
 not probabilities or calibrated confidence; evidence grades describe
 recorded audit completeness, not factual truth. The operation is read-only
 and makes no source requests or database migrations. See
-[relationship quality evaluation](docs/CROSS_PROVIDER_CANDIDATES.md#gate-24--relationship-quality-and-retrospective-evidence-evaluation).
+[relationship quality evaluation](
+docs/CROSS_PROVIDER_CANDIDATES.md#gate-24--relationship-quality-and-retrospective-evidence-evaluation
+).
