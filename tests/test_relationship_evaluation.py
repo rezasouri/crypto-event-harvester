@@ -18,8 +18,8 @@ from crypto_event_harvester.relationship_evaluation import (
 )
 from crypto_event_harvester.relationships import (
     relationship_id_for,
-    review_relationship,
     retract_relationship,
+    review_relationship,
 )
 from crypto_event_harvester.storage import sync_events
 
