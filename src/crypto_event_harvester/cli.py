@@ -185,8 +185,9 @@ def build_parser() -> argparse.ArgumentParser:
     relationship.add_argument(
         "--action",
         choices=(
-            "status", "list", "history", "candidates", "analytics",
-            "evaluate", "neighborhood", "export", "accept", "reject", "retract",
+            "status", "list", "history", "timeline", "as-of", "candidates",
+            "analytics", "evaluate", "neighborhood", "export",
+            "accept", "reject", "retract",
         ),
         required=True,
     )
@@ -208,7 +209,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     relationship.add_argument(
         "--event-id",
-        help="Source event ID for history or neighborhood inspection",
+        help="Source event ID for history, timeline, as-of or neighborhood inspection",
+    )
+    relationship.add_argument(
+        "--at-utc",
+        help="Required offset-aware ISO-8601 timestamp for --action as-of",
     )
     relationship.add_argument("--note")
     relationship.add_argument("--limit", type=int, default=100)
@@ -593,6 +598,7 @@ def _relationship(args) -> int:
         relationship_graph_analytics,
         relationship_neighborhood,
     )
+    from .relationship_temporal import relationship_as_of, relationship_timeline
     from .relationships import (
         list_relationships,
         relationship_history,
@@ -622,6 +628,22 @@ def _relationship(args) -> int:
             result = relationship_history(
                 args.db,
                 relationship_id=args.relationship_id,
+                event_id=args.event_id,
+                limit=args.limit,
+            )
+        elif args.action == "timeline":
+            result = relationship_timeline(
+                args.db,
+                relationship_id=args.relationship_id,
+                event_id=args.event_id,
+                limit=args.limit,
+            )
+        elif args.action == "as-of":
+            if args.at_utc is None:
+                raise ValueError("as-of requires --at-utc")
+            result = relationship_as_of(
+                args.db,
+                at_utc=args.at_utc,
                 event_id=args.event_id,
                 limit=args.limit,
             )
