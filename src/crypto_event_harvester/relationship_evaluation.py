@@ -360,7 +360,7 @@ def evaluate_relationship_quality(
     provider_pair_counts: Counter[str] = Counter()
     coverage_counts: Counter[str] = Counter()
 
-    for key, history in grouped.items():
+    for history in grouped.values():
         review_rows = [
             row for row in history if row["decision"] in {"accepted", "rejected"}
         ]
