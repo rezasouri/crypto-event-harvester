@@ -416,7 +416,9 @@ The report replays deterministic candidate evidence against immutable source
 revisions, compares score thresholds with accepted/rejected human labels, and
 audits reviewer basis, source URLs, notes, snapshot consistency and stale
 revisions. Retractions remain lifecycle actions, not negative labels.
-Threshold metrics apply only to the reviewed, scoreable subset. Scores are
+Evaluation readiness requires both scoreable decision classes, the minimum
+sample size and at least 50% candidate-score coverage. Threshold metrics apply
+only to the reviewed, scoreable subset. Scores are
 not probabilities or calibrated confidence; evidence grades describe
 recorded audit completeness, not factual truth. The operation is read-only
 and makes no source requests or database migrations. See
