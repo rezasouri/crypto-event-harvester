@@ -210,7 +210,8 @@ def _candidate_score(
 ) -> dict | None:
     """Recompute the current deterministic candidate evidence for one old revision pair."""
     if (
-        subject.get("date_precision") not in {"day", "range"}
+        subject.get("provider") == object_event.get("provider")
+        or subject.get("date_precision") not in {"day", "range"}
         or object_event.get("date_precision") not in {"day", "range"}
         or _is_conference(subject)
         or not _is_conference(object_event)
