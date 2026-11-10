@@ -260,7 +260,7 @@ def test_neighborhood_includes_an_existing_isolated_start_node(tmp_path):
 
 def test_stale_edges_are_excluded_from_analytics_and_exports(tmp_path):
     db = tmp_path / "events.sqlite"
-    subject, _, _, _ = _seed_graph(db)
+    subject, conference, second_subject, second_conference = _seed_graph(db)
     updated_subject = replace(
         subject,
         description="Updated source description; relationship must be reviewed again.",
@@ -279,8 +279,19 @@ def test_stale_edges_are_excluded_from_analytics_and_exports(tmp_path):
     assert report["nodes_total"] == 3
     assert exported["stale_edges_excluded"] == 2
     assert len(exported["edges"]) == 2
+    active_pairs = {
+        (edge["subject_event_id"], edge["object_event_id"])
+        for edge in exported["edges"]
+    }
+    assert active_pairs == {
+        (second_subject.event_id, conference.event_id),
+        (conference.event_id, second_conference.event_id),
+    }
     assert all(
-        edge["subject_revision"] == 1 or edge["object_revision"] == 1
+        subject.event_id not in {
+            edge["subject_event_id"],
+            edge["object_event_id"],
+        }
         for edge in exported["edges"]
     )
 
