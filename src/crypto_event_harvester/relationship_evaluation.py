@@ -369,13 +369,13 @@ def evaluate_relationship_quality(
         latest_action = history[-1]
         subject = json.loads(label_row["subject_payload_json"])
         object_event = json.loads(label_row["object_payload_json"])
+        if not isinstance(subject, dict) or not isinstance(object_event, dict):
+            raise ValueError("relationship decision revision payload must be a JSON object")
         if (
             subject.get("event_id") != label_row["subject_event_id"]
             or object_event.get("event_id") != label_row["object_event_id"]
         ):
             raise ValueError("relationship decision revision has inconsistent event identity")
-        if not isinstance(subject, dict) or not isinstance(object_event, dict):
-            raise ValueError("relationship decision revision payload must be a JSON object")
 
         quality, issues = _evidence_quality(label_row, subject, object_event)
         edge = edges.get(label_row["relationship_id"])
@@ -388,11 +388,18 @@ def evaluate_relationship_quality(
         if stale:
             issues.append("stale_source_revision")
 
-        if latest_action["decision"] == "accepted":
-            if edge is None:
+        edge_matches_revision = (
+            edge is not None
+            and edge["subject_revision"] == label_row["subject_revision"]
+            and edge["object_revision"] == label_row["object_revision"]
+        )
+        if edge is not None and not edge_matches_revision:
+            projection = "superseded_by_newer_revision"
+        elif latest_action["decision"] == "accepted":
+            if edge is None and not stale:
                 issues.append("accepted_edge_missing")
                 projection = "missing"
-            elif edge["accepted_decision_id"] != latest_action["decision_id"]:
+            elif edge_matches_revision and edge["accepted_decision_id"] != latest_action["decision_id"]:
                 issues.append("active_edge_decision_mismatch")
                 projection = "mismatch"
             elif stale:
@@ -400,13 +407,13 @@ def evaluate_relationship_quality(
             else:
                 projection = "active"
         elif latest_action["decision"] == "retracted":
-            if edge is not None:
+            if edge_matches_revision:
                 issues.append("retracted_edge_still_active")
                 projection = "mismatch"
             else:
                 projection = "retracted"
         else:
-            if edge is not None:
+            if edge_matches_revision:
                 issues.append("rejected_decision_has_active_edge")
                 projection = "mismatch"
             else:
