@@ -165,7 +165,7 @@ def test_single_class_is_not_reported_as_evaluation_ready(tmp_path):
 def test_missing_reviewer_basis_is_flagged_without_claiming_low_probability(tmp_path):
     db = tmp_path / "events.sqlite"
     subject, conference = _seed_pair(db)
-    _review(db, subject, conference, "accepted", evidence={}, note=None)
+    _review(db, subject, conference, "accepted", evidence={}, note="")
 
     report = evaluate_relationship_quality(db, min_reviewed_pairs=1)
 
