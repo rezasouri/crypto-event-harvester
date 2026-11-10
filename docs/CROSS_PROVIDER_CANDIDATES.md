@@ -505,3 +505,51 @@ record and the conference record remain distinct source events connected only
 by a directed semantic relationship after human approval. Scores and lexical
 overlap cannot establish that a claim is true; reviewers should inspect the
 source URL and cue snippet before accepting.
+
+
+## Gate 23 — read-only relationship graph analytics and export
+
+Gate 23 adds graph inspection on top of the accepted semantic relationships
+from Gate 20. It does not infer new edges or alter the canonical identity
+subsystem. All analytics and exports use only accepted relationships whose
+subject and object revisions still match the current source snapshots. Stale
+edges are counted and excluded from the active graph.
+
+Summarize the accepted graph:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action analytics
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action analytics --limit 50
+
+The report includes active node/edge counts, stale edges excluded, weakly
+connected component sizes, directed in/out-degree rankings, predicate counts
+and provider-pair counts. Weak components describe connectivity only; they do
+not imply that a semantic predicate is transitive.
+
+Inspect bounded paths around one source event:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action neighborhood \
+      --event-id coindar:155698 --direction both --depth 2 --limit 100
+
+Direction may be outgoing, incoming or both. Traversal depth is bounded to
+1–3 and returned simple paths are capped by --limit. Each step preserves the
+original edge direction and predicate. A path is a chain of accepted edges,
+not a newly inferred relationship between its endpoints.
+
+Export the active directed graph for external analysis or visualization:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action export \
+      --format json --output artifacts/relationship-graph.json
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action export \
+      --format graphml --output artifacts/relationship-graph.graphml
+
+GraphML preserves source event IDs, provider, title, project/ticker metadata,
+event dates, location, source URL, revisions and directed relationship
+predicates. Reviewer evidence and free-form notes are intentionally omitted
+from exports. GraphML node IDs are stable within one export; the original
+provider-prefixed event ID is retained as node data.
+
+All three operations open SQLite in query-only mode and require schema version
+4 or newer without running migrations. They make no source requests and do not
+modify source rows, revisions, canonical identities, graph edges or review
+history. Stale relationships remain available through the existing status and
+list commands for explicit human re-review.

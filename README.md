@@ -370,3 +370,29 @@ Unlink and split are transactional and audited. A split must leave at least
 one member in the original identity. Empty identities remain as historical
 records; source event snapshots and revision history are never deleted or
 rewritten. SQLite schema version 2 databases migrate additively to version 3.
+
+
+## Gate 23 — relationship graph analytics and export
+
+Inspect the accepted semantic relationship graph without changing it:
+
+~~~bash
+# Aggregate graph metrics and top connected source records.
+uv run crypto-harvester relationship --db data/harvest.sqlite --action analytics
+
+# Explore accepted paths around one event (depth is limited to 1–3).
+uv run crypto-harvester relationship --db data/harvest.sqlite --action neighborhood \
+  --event-id coindar:155698 --direction both --depth 2
+
+# Export a directed graph for Gephi/Cytoscape or custom analysis.
+uv run crypto-harvester relationship --db data/harvest.sqlite --action export \
+  --format graphml --output artifacts/relationship-graph.graphml
+~~~
+
+Only accepted edges with current source revisions are included; stale edges
+are reported separately. Paths describe graph connectivity and do not infer
+transitive semantic relationships. Analytics, traversal and export are
+read-only, issue no source requests and do not migrate the database. See
+[relationship graph analytics](
+docs/CROSS_PROVIDER_CANDIDATES.md#gate-23--read-only-relationship-graph-analytics-and-export
+).

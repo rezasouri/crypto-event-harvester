@@ -179,12 +179,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     relationship = subcommands.add_parser(
         "relationship",
-        help="Review and inspect directed semantic relationships between source event records",
+        help="Review, analyze and export directed semantic relationships between source events",
     )
     relationship.add_argument("--db", required=True, type=Path)
     relationship.add_argument(
         "--action",
-        choices=("status", "list", "history", "candidates", "accept", "reject", "retract"),
+        choices=(
+            "status", "list", "history", "candidates", "analytics",
+            "neighborhood", "export", "accept", "reject", "retract",
+        ),
         required=True,
     )
     relationship.add_argument("--subject-event-id")
@@ -203,9 +206,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence-json",
         help="Optional JSON object containing reviewer-supplied evidence",
     )
-    relationship.add_argument("--event-id", help="Filter relationship history by source event ID")
+    relationship.add_argument(
+        "--event-id",
+        help="Source event ID for history or neighborhood inspection",
+    )
     relationship.add_argument("--note")
     relationship.add_argument("--limit", type=int, default=100)
+    relationship.add_argument("--output", type=Path, help="Optional JSON or GraphML output path")
+    relationship.add_argument(
+        "--format",
+        choices=("json", "graphml"),
+        default="json",
+        help="Graph export format (applies only to --action export)",
+    )
+    relationship.add_argument("--depth", type=int, default=2)
+    relationship.add_argument(
+        "--direction",
+        choices=("outgoing", "incoming", "both"),
+        default="both",
+        help="Traversal direction for --action neighborhood",
+    )
     relationship.add_argument(
         "--min-score",
         type=float,
@@ -554,6 +574,11 @@ def _reconcile(args) -> int:
 
 def _relationship(args) -> int:
     from .relationship_candidates import discover_relationship_candidates
+    from .relationship_graph import (
+        export_relationship_graph,
+        relationship_graph_analytics,
+        relationship_neighborhood,
+    )
     from .relationships import (
         list_relationships,
         relationship_history,
@@ -563,6 +588,8 @@ def _relationship(args) -> int:
     )
 
     try:
+        if args.format != "json" and args.action != "export":
+            raise ValueError("--format applies only to --action export")
         if args.action == "candidates":
             result = discover_relationship_candidates(
                 args.db, limit=args.limit, min_score=args.min_score
@@ -584,6 +611,38 @@ def _relationship(args) -> int:
                 event_id=args.event_id,
                 limit=args.limit,
             )
+        elif args.action == "analytics":
+            result = relationship_graph_analytics(args.db, limit=args.limit)
+        elif args.action == "neighborhood":
+            if not args.event_id:
+                raise ValueError("neighborhood requires --event-id")
+            result = relationship_neighborhood(
+                args.db,
+                event_id=args.event_id,
+                depth=args.depth,
+                direction=args.direction,
+                limit=args.limit,
+            )
+        elif args.action == "export":
+            result = export_relationship_graph(args.db, format=args.format)
+            if isinstance(result, str):
+                if args.output:
+                    args.output.parent.mkdir(parents=True, exist_ok=True)
+                    args.output.write_text(result, encoding="utf-8")
+                    print(
+                        json.dumps(
+                            {
+                                "status": "exported",
+                                "format": args.format,
+                                "output": str(args.output),
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
+                    )
+                    return 0
+                print(result, end="")
+                return 0
         elif args.action == "retract":
             if not args.relationship_id:
                 raise ValueError("retract requires --relationship-id")
@@ -591,8 +650,14 @@ def _relationship(args) -> int:
                 args.db, relationship_id=args.relationship_id, note=args.note
             )
         else:
-            if not args.subject_event_id or not args.object_event_id or not args.relation_type:
-                raise ValueError("accept/reject require subject ID, object ID and relation type")
+            if (
+                not args.subject_event_id
+                or not args.object_event_id
+                or not args.relation_type
+            ):
+                raise ValueError(
+                    "accept/reject require subject ID, object ID and relation type"
+                )
             evidence = None
             if args.evidence_json is not None:
                 evidence = json.loads(args.evidence_json)
@@ -609,7 +674,24 @@ def _relationship(args) -> int:
                 evidence=evidence,
                 note=args.note,
             )
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+
+        rendered = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(rendered, encoding="utf-8")
+            print(
+                json.dumps(
+                    {
+                        "status": "written",
+                        "action": args.action,
+                        "output": str(args.output),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(rendered, end="")
         return 0
     except (
         OSError, ValueError, RuntimeError, json.JSONDecodeError, sqlite3.DatabaseError
