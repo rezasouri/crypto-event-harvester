@@ -186,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--action",
         choices=(
             "status", "list", "history", "candidates", "analytics",
-            "neighborhood", "export", "accept", "reject", "retract",
+            "evaluate", "neighborhood", "export", "accept", "reject", "retract",
         ),
         required=True,
     )
@@ -231,6 +231,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.60,
         help="Minimum deterministic evidence score for review-only candidate discovery",
+    )
+    relationship.add_argument(
+        "--thresholds",
+        nargs="+",
+        type=float,
+        default=[0.60, 0.70, 0.80, 0.90],
+        help="Retrospective relationship evidence-score thresholds (0–1)",
+    )
+    relationship.add_argument(
+        "--min-reviewed-pairs",
+        type=int,
+        default=30,
+        help="Minimum reviewed relationships required for an evaluation-ready status",
     )
 
     store = subcommands.add_parser("store", help="Inspect SQLite event snapshots and history")
@@ -574,6 +587,7 @@ def _reconcile(args) -> int:
 
 def _relationship(args) -> int:
     from .relationship_candidates import discover_relationship_candidates
+    from .relationship_evaluation import evaluate_relationship_quality
     from .relationship_graph import (
         export_relationship_graph,
         relationship_graph_analytics,
@@ -613,6 +627,13 @@ def _relationship(args) -> int:
             )
         elif args.action == "analytics":
             result = relationship_graph_analytics(args.db, limit=args.limit)
+        elif args.action == "evaluate":
+            result = evaluate_relationship_quality(
+                args.db,
+                thresholds=args.thresholds,
+                min_reviewed_pairs=args.min_reviewed_pairs,
+                limit=args.limit,
+            )
         elif args.action == "neighborhood":
             if not args.event_id:
                 raise ValueError("neighborhood requires --event-id")

@@ -207,3 +207,20 @@ JSON and directed GraphML exports support downstream analysis and
 visualization. Reviewer notes/evidence are excluded from exports. No schema
 migration, source request, event/revision mutation, canonical identity change,
 relationship creation or review-history mutation is performed.
+
+
+## Gate 24 status — relationship quality and retrospective evidence evaluation
+
+Adds a read-only evaluator over human-reviewed semantic relationship history.
+It groups exact relationship/source-revision tuples, uses the latest accepted
+or rejected label, and treats retractions as lifecycle actions rather than
+negative labels. Current deterministic candidate rules are replayed against
+immutable historical source revisions to produce score coverage, per-label
+score summaries and threshold metrics on the scoreable reviewed subset.
+Evidence auditing checks source snapshot consistency, source URLs, reviewer
+basis, review marker and reviewer note, and reports stale revisions or
+projection inconsistencies. Evidence grades describe audit-field completeness,
+not truth or probability. Evaluation readiness requires a minimum sample,
+both decision classes and adequate score coverage. No calibrated confidence,
+automatic decision, network request, schema migration or database mutation
+is introduced. See the Gate 24 section in CROSS_PROVIDER_CANDIDATES.md.

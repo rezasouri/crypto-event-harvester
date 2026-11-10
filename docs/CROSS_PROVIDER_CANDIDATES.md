@@ -553,3 +553,51 @@ All three operations open SQLite in query-only mode and require schema version
 modify source rows, revisions, canonical identities, graph edges or review
 history. Stale relationships remain available through the existing status and
 list commands for explicit human re-review.
+
+
+## Gate 24 — relationship quality and retrospective evidence evaluation
+
+Gate 24 evaluates the human-reviewed semantic relationship history without
+changing it. It is a diagnostic report, not an automated acceptance or
+rejection mechanism.
+
+Run the report against an existing schema-v4 database:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action evaluate
+
+Customize the deterministic evidence-score sweep and sample-size requirement:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action evaluate \
+      --thresholds 0.60 0.70 0.80 0.90 --min-reviewed-pairs 30 --limit 100
+
+The report groups decisions by the exact directed relationship and source
+revision pair, then uses the latest accepted/rejected human label for that
+revision tuple. A retraction is a lifecycle action and is not reinterpreted as
+a negative label. Historical event-revision payloads are used so later source
+updates cannot silently rewrite the evidence that was reviewed.
+
+For scoreable records, the current deterministic relationship-candidate rules
+are replayed against the historical subject and object revisions. The report
+includes score coverage, score distributions by human label, and threshold
+metrics (precision, recall, F1, specificity and accuracy). Threshold metrics
+use only reviewed relationships for which the current rules produce a score.
+They do not estimate recall over undiscovered relationships.
+
+The evidence audit reports snapshot consistency, source URL presence, reviewer
+basis, review marker and reviewer note coverage. Evidence grades (complete,
+partial, insufficient) describe recorded audit-field completeness only;
+they do not indicate truth or probability. Findings include stale revisions,
+missing evidence fields, absent candidate signals and inconsistencies between
+review history and the current accepted-edge projection.
+
+An evaluated status requires at least the configured number of reviewed
+relationship-revision pairs, both accepted and rejected scoreable labels, and
+at least 50% candidate-score coverage. Smaller or single-class datasets are explicitly marked
+insufficient rather than presenting misleading performance claims.
+
+The command opens SQLite in query-only mode, requires schema version 4 or
+newer, and never migrates the database. It makes no source requests and does
+not alter events, revisions, canonical identities, relationship edges or
+decision history. Scores are deterministic ranking evidence, not calibrated
+confidence or probabilities. Human decisions are not independent ground
+truth, and the reviewed sample is selection-biased.
