@@ -591,8 +591,8 @@ missing evidence fields, absent candidate signals and inconsistencies between
 review history and the current accepted-edge projection.
 
 An evaluated status requires at least the configured number of reviewed
-relationship-revision pairs, both accepted and rejected labels, and sufficient
-score coverage. Smaller or single-class datasets are explicitly marked
+relationship-revision pairs, both accepted and rejected scoreable labels, and
+at least 50% candidate-score coverage. Smaller or single-class datasets are explicitly marked
 insufficient rather than presenting misleading performance claims.
 
 The command opens SQLite in query-only mode, requires schema version 4 or
