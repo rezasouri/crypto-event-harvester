@@ -192,3 +192,18 @@ No relationship is created automatically. No canonical identity, source
 event, revision history or decision history is modified. The command makes no
 network requests and does not migrate older databases. See the Gate 22 section
 in CROSS_PROVIDER_CANDIDATES.md.
+
+
+## Gate 23 status — read-only relationship graph analytics
+
+Adds query-only graph analytics over human-accepted semantic relationships.
+Only edges whose exact subject and object revisions match current source
+snapshots enter the active graph; stale edges are counted and excluded.
+Reports directed degree rankings, predicate/provider-pair counts and weak
+connectivity components. Bounded neighborhood traversal exposes simple paths
+of up to three edges while preserving each edge's direction and predicate;
+paths are connectivity evidence only and do not imply transitive semantics.
+JSON and directed GraphML exports support downstream analysis and
+visualization. Reviewer notes/evidence are excluded from exports. No schema
+migration, source request, event/revision mutation, canonical identity change,
+relationship creation or review-history mutation is performed.
