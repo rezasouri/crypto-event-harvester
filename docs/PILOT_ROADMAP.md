@@ -237,3 +237,16 @@ Retractions and rejections are separate lifecycle states. Includes event and
 relationship filters and bounded output. Never uses scheduled event dates as
 relationship validity periods; does not claim full historical SQL transaction
 snapshots. No migration, source request, graph mutation or automatic decision.
+
+
+## Gate 26 status — relationship graph integrity audit
+
+Adds a read-only integrity audit across append-only relationship decisions,
+immutable source revisions and the active accepted-edge projection. Checks
+deterministic IDs, evidence snapshot alignment, decision/retraction chains,
+projection pointers, source payload hashes, required guard triggers, SQLite
+integrity and foreign keys. Reports stale edges separately from structural
+errors, and reciprocal/multi-predicate pairs as advisory or informational
+signals rather than inferred contradictions. Bounded findings are ordered by
+severity. No migrations, network access, graph mutations or automatic review
+decisions.

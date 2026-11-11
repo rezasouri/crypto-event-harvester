@@ -644,3 +644,35 @@ compose indirect graph paths into new semantic edges.
 Both commands open schema-v4 SQLite in query-only mode, perform no migrations
 and make no network requests or database mutations. No decision is accepted,
 rejected, retracted or created automatically.
+
+
+## Gate 26 — read-only relationship graph integrity audit
+
+Run a structural audit of the semantic relationship graph and its append-only
+review history:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action audit --limit 100
+
+The audit verifies deterministic relationship IDs, source revision
+availability and payload hashes, evidence snapshot identity, accepted-edge
+decision pointers, latest accepted decisions for exact revision pairs, and
+the current accepted-edge projection. It also checks the required SQLite
+guard triggers, SQLite integrity and foreign-key constraints.
+
+Stale accepted edges are reported as review warnings, not structural errors:
+they remain in the audit history but are not current against the latest source
+snapshots. Multiple predicates on the same directed event pair are reported
+as informational because one project may have several roles at one event.
+Reciprocal predicates are advisory review signals, not automatic contradictions
+or deletion recommendations.
+
+Findings are classified as errors, warnings or information and returned in
+deterministic severity order with a bounded sample. The report includes edge
+freshness, predicate/provider distributions and database integrity results.
+It never exports reviewer notes or evidence bodies.
+
+The command requires schema version 4 or newer, opens SQLite in query-only
+mode, performs no migration, source request, graph mutation, canonical identity
+change or automatic relationship decision. A structurally consistent graph
+does not prove that the underlying human-reviewed claims are factually true;
+the audit validates stored consistency and provenance only.

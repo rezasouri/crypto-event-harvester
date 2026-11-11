@@ -186,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--action",
         choices=(
             "status", "list", "history", "timeline", "as-of", "candidates",
-            "analytics", "evaluate", "neighborhood", "export",
+            "analytics", "audit", "evaluate", "neighborhood", "export",
             "accept", "reject", "retract",
         ),
         required=True,
@@ -649,6 +649,10 @@ def _relationship(args) -> int:
             )
         elif args.action == "analytics":
             result = relationship_graph_analytics(args.db, limit=args.limit)
+        elif args.action == "audit":
+            from .relationship_audit import audit_relationship_graph
+
+            result = audit_relationship_graph(args.db, limit=args.limit)
         elif args.action == "evaluate":
             result = evaluate_relationship_quality(
                 args.db,

@@ -444,3 +444,24 @@ Historical state is reconstructed from stored human decision timestamps and
 source revision observation timestamps. Event schedule dates are not edge
 validity dates. These commands are read-only and cannot infer future or
 indirect relationships. See [Gate 25 documentation](docs/CROSS_PROVIDER_CANDIDATES.md).
+
+
+## Gate 26 — relationship graph integrity audit
+
+Check the append-only decision history and accepted-edge projection:
+
+~~~bash
+uv run crypto-harvester relationship \
+  --db data/harvest.sqlite \
+  --action audit \
+  --limit 100
+~~~
+
+The read-only audit checks source revision hashes, reviewer evidence snapshot
+identity, deterministic relationship IDs, retraction chains, accepted-edge
+projection pointers, required SQLite guard triggers and database integrity.
+Stale edges are review warnings; multiple predicates and reciprocal edges are
+reported as informational/advisory signals rather than automatically treated
+as contradictions. The audit does not prove factual truth and never changes
+the database. See [Gate 26 documentation](
+docs/CROSS_PROVIDER_CANDIDATES.md#gate-26--read-only-relationship-graph-integrity-audit).
