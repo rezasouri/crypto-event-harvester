@@ -351,3 +351,26 @@ def test_audit_rejects_legacy_database_without_migration(tmp_path):
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
     ).fetchall() == [("events",)]
     conn.close()
+
+
+def test_invalid_temporal_provenance_timestamps_are_reported(tmp_path):
+    db = tmp_path / "events.sqlite"
+    subject, conference = _seed(db)
+    _review(db, subject, conference, "participates_in")
+
+    conn = sqlite3.connect(db)
+    conn.execute("DROP TRIGGER trg_relationship_decisions_no_update")
+    conn.execute(
+        "UPDATE event_relationship_decisions SET decided_at_utc='not-a-timestamp'"
+    )
+    conn.execute(
+        "UPDATE event_revisions SET observed_at_utc='2026-11-01T10:00:00'"
+    )
+    conn.commit()
+    conn.close()
+
+    report = audit_relationship_graph(db)
+
+    assert report["status"] == "inconsistent"
+    assert "invalid_decision_timestamp" in _codes(report)
+    assert "invalid_revision_observation_timestamp" in _codes(report)
