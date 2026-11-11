@@ -28,6 +28,16 @@ def _bounded(limit: int) -> None:
         raise ValueError("limit must be between 1 and 1000")
 
 
+def _valid_offset_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+
+
 def _json_object(value: object) -> dict | None:
     try:
         parsed = json.loads(value) if isinstance(value, str) else None
@@ -169,6 +179,23 @@ def audit_relationship_graph(
                 entity_type="source_revision", entity_id=f"{key[0]}@{key[1]}",
                 details="Historical payload event ID disagrees with its revision row.",
             )
+        if not _valid_offset_timestamp(row["observed_at_utc"]):
+            _finding(
+                findings, code="invalid_revision_observation_timestamp",
+                severity="error", entity_type="source_revision",
+                entity_id=f"{key[0]}@{key[1]}",
+                details="Source revision observation time is not an offset-aware ISO-8601 timestamp.",
+            )
+        current_event = events.get(row["event_id"])
+        if (
+            current_event is not None
+            and payload.get("provider") != current_event["provider"]
+        ):
+            _finding(
+                findings, code="revision_provider_mismatch", severity="error",
+                entity_type="source_revision", entity_id=f"{key[0]}@{key[1]}",
+                details="Historical revision provider disagrees with the event's provider identity.",
+            )
         revisions[key] = {
             "payload": payload,
             "payload_sha256": row["payload_sha256"],
@@ -208,6 +235,18 @@ def audit_relationship_graph(
         relation_id = item["relationship_id"]
         relation_type = item["relation_type"]
         decision_counts[item["decision"]] += 1
+        if item["decision"] not in {"accepted", "rejected", "retracted"}:
+            _finding(
+                findings, code="unknown_decision_state", severity="error",
+                entity_type="decision", entity_id=decision_id,
+                details="Decision uses an unsupported lifecycle state.",
+            )
+        if not _valid_offset_timestamp(item["decided_at_utc"]):
+            _finding(
+                findings, code="invalid_decision_timestamp", severity="error",
+                entity_type="decision", entity_id=decision_id,
+                details="Decision time is not an offset-aware ISO-8601 timestamp.",
+            )
         key = (
             relation_id,
             item["subject_revision"],
