@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -532,8 +531,8 @@ def audit_relationship_graph(
         "mode": "read_only",
         "database_version": version,
         "scope": "relationship_decision_history_and_active_edge_projection",
-        "events_total": len(events),
-        "source_revisions_total": len(revisions),
+        "events_total": len(event_rows),
+        "source_revisions_total": len(revision_rows),
         "decisions_total": len(decisions),
         "decisions_by_status": dict(sorted(decision_counts.items())),
         "accepted_edges_total": len(edges),
