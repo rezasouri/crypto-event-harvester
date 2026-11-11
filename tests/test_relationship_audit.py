@@ -76,14 +76,23 @@ def _clone(event, source_event_id, *, title, project=None):
 
 
 def _review(db, subject, object_event, relation_type, decision="accepted"):
+    conn = sqlite3.connect(db)
+    revisions = {
+        row[0]: row[1]
+        for row in conn.execute(
+            "SELECT event_id, revision FROM events WHERE event_id IN (?, ?)",
+            (subject.event_id, object_event.event_id),
+        )
+    }
+    conn.close()
     return review_relationship(
         db,
         subject_event_id=subject.event_id,
         object_event_id=object_event.event_id,
         relation_type=relation_type,
         decision=decision,
-        expected_subject_revision=1,
-        expected_object_revision=1,
+        expected_subject_revision=revisions[subject.event_id],
+        expected_object_revision=revisions[object_event.event_id],
         evidence={"basis": "fixture source review", "review": "human"},
         note="Reviewed against the fixture source records.",
     )
