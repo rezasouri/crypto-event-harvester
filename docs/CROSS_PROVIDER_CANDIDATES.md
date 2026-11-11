@@ -601,3 +601,46 @@ not alter events, revisions, canonical identities, relationship edges or
 decision history. Scores are deterministic ranking evidence, not calibrated
 confidence or probabilities. Human decisions are not independent ground
 truth, and the reviewed sample is selection-biased.
+
+
+## Gate 25 — temporal relationship decision history and as-of views
+
+Gate 25 adds two read-only operations over the append-only relationship review
+history and observed source revisions. The time reference is **UTC decision and
+source-observation time**, not the scheduled date of an event.
+
+Read the chronological review-action timeline for one relationship:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action timeline \
+      --relationship-id relationship:YOUR_RELATIONSHIP_ID --limit 100
+
+The timeline also accepts --event-id to select actions where a source event
+appears on either side. It includes accepts, rejects and retractions, linked
+source revision numbers and superseded decision IDs. For a limited report it
+returns the latest N actions in chronological order. Reviewer evidence bodies
+and notes are intentionally omitted.
+
+Reconstruct the graph state recorded by an exact instant:
+
+    uv run crypto-harvester relationship --db data/harvest.sqlite --action as-of \
+      --at-utc 2026-11-02T12:00:00Z --limit 100
+
+--at-utc requires an offset-aware ISO-8601 timestamp; Z and explicit UTC
+offsets are supported and normalized to UTC. The cutoff is inclusive.
+An optional --event-id restricts the report to relationships incident on one
+source event. The report selects each relationship's last decision action no
+later than the cutoff. Accepted edges are included only if their subject and
+object revision numbers both match the **latest revisions observed by that
+cutoff**. Future source revisions are never used; accepted edges superseded by
+already-observed revisions are counted as stale and excluded. Accepted edges
+without any source snapshot observed by the cutoff are counted separately.
+
+These are as-observed reconstructions, **not historical SQLite transaction
+snapshots**. Observation timestamps might be incomplete or inaccurate, and
+backfilled records can limit replay fidelity. The approach does not infer
+relationship validity from future event start/end times, predict changes, or
+compose indirect graph paths into new semantic edges.
+
+Both commands open schema-v4 SQLite in query-only mode, perform no migrations
+and make no network requests or database mutations. No decision is accepted,
+rejected, retracted or created automatically.

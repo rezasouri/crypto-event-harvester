@@ -224,3 +224,16 @@ not truth or probability. Evaluation readiness requires a minimum sample,
 both decision classes and adequate score coverage. No calibrated confidence,
 automatic decision, network request, schema migration or database mutation
 is introduced. See the Gate 24 section in CROSS_PROVIDER_CANDIDATES.md.
+
+
+## Gate 25 status — temporal relationship history and as-of views
+
+Adds read-only inspection of chronologically ordered relationship decision
+actions and UTC as-of reconstruction of accepted graph edges. Uses recorded
+decision timestamps plus source revision observation times, selecting the
+latest revision observed by the cutoff rather than today's latest source
+snapshot. Filters invalidated edges and reports missing observed snapshots.
+Retractions and rejections are separate lifecycle states. Includes event and
+relationship filters and bounded output. Never uses scheduled event dates as
+relationship validity periods; does not claim full historical SQL transaction
+snapshots. No migration, source request, graph mutation or automatic decision.
