@@ -32,7 +32,9 @@ def _valid_offset_timestamp(value: object) -> bool:
     if not isinstance(value, str) or not value:
         return False
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
     except ValueError:
         return False
     return parsed.tzinfo is not None and parsed.utcoffset() is not None
@@ -337,7 +339,10 @@ def audit_relationship_graph(
                         findings, code="duplicate_or_conflicting_review_action",
                         severity="error", entity_type="decision",
                         entity_id=item["decision_id"],
-                        details="A new review action follows an accepted/rejected action without a retraction.",
+                        details=(
+                            "A new review action follows an accepted/rejected action "
+                            "without a retraction."
+                        ),
                     )
             elif decision == "retracted":
                 superseded = decision_by_id.get(item["supersedes_decision_id"])
@@ -358,12 +363,14 @@ def audit_relationship_graph(
                     _finding(
                         findings, code="invalid_retraction_chain", severity="error",
                         entity_type="decision", entity_id=item["decision_id"],
-                        details="Retraction does not supersede the immediately preceding accepted decision for this revision tuple.",
+                        details=(
+                            "Retraction does not supersede the immediately preceding "
+                            "accepted decision for this revision tuple."
+                        ),
                     )
             previous = item
         latest_by_tuple[key] = history[-1]
 
-    edge_by_id = {item["relationship_id"]: item for item in edges}
     current_edges = 0
     stale_edges = 0
     edge_by_tuple: dict[tuple, dict] = {}
@@ -435,7 +442,10 @@ def audit_relationship_graph(
                 _finding(
                     findings, code="edge_not_latest_accepted_decision",
                     severity="error", entity_type="edge", entity_id=edge_id,
-                    details="Edge does not point to the latest accepted action for its exact source revisions.",
+                    details=(
+                        "Edge does not point to the latest accepted action for its "
+                        "exact source revisions."
+                    ),
                 )
             if edge["evidence_json"] != pointer["evidence_json"]:
                 _finding(
@@ -490,7 +500,10 @@ def audit_relationship_graph(
                 findings, code="current_acceptance_missing_from_projection",
                 severity="error", entity_type="decision",
                 entity_id=latest["decision_id"],
-                details="Latest accepted decision for current source revisions has no matching active graph edge.",
+                details=(
+                    "Latest accepted decision for current source revisions has no "
+                    "matching active graph edge."
+                ),
             )
 
     for (subject_id, object_id), predicates in pair_predicates.items():
@@ -498,7 +511,10 @@ def audit_relationship_graph(
             _finding(
                 findings, code="multiple_predicates_for_pair", severity="info",
                 entity_type="event_pair", entity_id=f"{subject_id}->{object_id}",
-                details="The directed event pair has multiple accepted predicates; this may be valid multi-faceted participation.",
+                details=(
+                    "The directed event pair has multiple accepted predicates; "
+                    "this may be valid multi-faceted participation."
+                ),
             )
 
     reciprocal_pairs = 0
