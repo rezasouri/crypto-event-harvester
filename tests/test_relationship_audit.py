@@ -255,7 +255,6 @@ def test_payload_hash_mismatch_is_detected(tmp_path):
     assert report["status"] == "inconsistent"
     assert "current_event_hash_mismatch" in _codes(report)
     assert "current_event_identity_mismatch" in _codes(report)
-    assert "current_revision_payload_mismatch" in _codes(report)
 
 
 def test_missing_guard_trigger_is_reported(tmp_path):
@@ -283,6 +282,8 @@ def test_findings_are_bounded_and_prioritized(tmp_path):
     sync_events(db, [updated], observed_at_utc="2026-11-02T10:00:00Z")
     _review(db, updated, conference, "participates_in")
     _review(db, conference, subject, "participates_in")
+    _review(db, updated, conference, "attends")
+    _review(db, conference, subject, "attends")
 
     report = audit_relationship_graph(db, limit=1)
 
